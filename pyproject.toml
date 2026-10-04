@@ -37,7 +37,4 @@ datalens = "datalens.__main__:app"
 dataset-stats = "datalens.__main__:app"
 
 [tool.hatch.build.targets.wheel]
-only-include = ["__init__.py", "__main__.py", "core"]
-
-[tool.hatch.build.targets.wheel.sources]
-"" = "datalens"
+packages = ["src/datalens"]

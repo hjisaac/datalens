@@ -5,11 +5,11 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from core.config import boot_config, build_config
-from core.mapper import map_task
-from core.reducer import reduce_group
-from core.shuffler import shuffle
-from core.types import FileTask
+from datalens.core.config import boot_config, build_config
+from datalens.core.mapper import map_task
+from datalens.core.reducer import reduce_group
+from datalens.core.shuffler import shuffle
+from datalens.core.types import FileTask
 
 
 def _write_parquet(path: Path, table: pa.Table) -> None:
@@ -68,7 +68,7 @@ def test_run_analysis_multiple_partitions(tmp_path: Path) -> None:
         }
     )
 
-    from core.orchestrator import run_analysis
+    from datalens.core.orchestrator import run_analysis
 
     result = run_analysis(config)
     assert result.files_processed == 2
@@ -94,7 +94,7 @@ def test_run_analysis_multiple_partitions(tmp_path: Path) -> None:
 
 
 def test_public_package_api_import(tmp_path: Path) -> None:
-    from dataset_stats import (
+    from datalens import (
         AnalysisConfig,
         AnalysisResult,
         CardinalityAccumulator,
@@ -125,7 +125,7 @@ def test_public_package_api_import(tmp_path: Path) -> None:
 
 
 def test_run_analysis_in_memory_records() -> None:
-    from dataset_stats import AnalysisConfig, run_analysis
+    from datalens import AnalysisConfig, run_analysis
 
     config = AnalysisConfig(columns={"score": "numeric", "status": "categorical"})
     records = [
@@ -140,7 +140,7 @@ def test_run_analysis_in_memory_records() -> None:
 
 
 def test_run_analysis_with_data_tasks() -> None:
-    from dataset_stats import AnalysisConfig, DataTask, run_analysis
+    from datalens import AnalysisConfig, DataTask, run_analysis
 
     config = AnalysisConfig(columns={"value": "numeric"})
     tasks = [
@@ -156,7 +156,7 @@ def test_run_analysis_with_data_tasks() -> None:
 
 def test_direct_accumulator_classes() -> None:
     import numpy as np
-    from dataset_stats import (
+    from datalens import (
         CardinalityAccumulator,
         CategoricalAccumulator,
         CountAccumulator,

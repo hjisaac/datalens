@@ -5,9 +5,9 @@ from pathlib import Path
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from core.config import build_config
-from core.discovery import discover_tasks
-from core.types import FileTask
+from datalens.core.config import build_config
+from datalens.core.discovery import discover_tasks
+from datalens.core.types import FileTask
 
 
 def _write_parquet(path: Path, table: pa.Table) -> None:

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from core.config import build_config
-from core.orchestrator import run_analysis
+from datalens.core.config import build_config
+from datalens.core.orchestrator import run_analysis
 
 
 def test_run_analysis_csv(tmp_path: Path) -> None:
@@ -52,7 +52,7 @@ def test_run_analysis_jsonl(tmp_path: Path) -> None:
 
 def test_numeric_values_pure_numpy() -> None:
     import numpy as np
-    from core.readers import numeric_values
+    from datalens.core.readers import numeric_values
 
     # Test numbers, None, strings, and floats
     res = numeric_values([10, None, 20.5, "30.0", "invalid"])
@@ -66,7 +66,7 @@ def test_numeric_values_pure_numpy() -> None:
 def test_parquet_without_pyarrow_raises_importerror(tmp_path: Path, monkeypatch) -> None:
     import sys
     import pytest
-    from core.readers import read_batches
+    from datalens.core.readers import read_batches
 
     dummy = tmp_path / "test.parquet"
     dummy.write_text("dummy")

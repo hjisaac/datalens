@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from core.config import build_config
+from datalens.core.config import build_config
 
 
 def test_config_rejects_empty_columns(tmp_path: Path) -> None:

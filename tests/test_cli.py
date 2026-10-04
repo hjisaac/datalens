@@ -9,7 +9,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from dataset_stats.__main__ import app
+from datalens.__main__ import app
 
 runner = CliRunner()
 
