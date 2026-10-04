@@ -3,29 +3,37 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "dataset-analyzer"
+name = "datalens"
 version = "0.1.0"
-description = "Quick dataset analysis: token-level statistics over sequence columns."
+description = "Fast, streaming map-reduce statistics for tabular datasets (Parquet, CSV, TSV, JSONL)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
-    "numpy>=1.26",
-    "pandas>=2.1",
-    "scipy>=1.11",
+    "numpy>=1.20.0",
+    "omegaconf>=2.3.0",
+    "pyyaml>=6.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+parquet = [
+    "pyarrow>=10.0.0",
+]
+dev = [
+    "pytest>=7.0",
+    "pyarrow>=10.0.0",
+]
+all = [
+    "pyarrow>=10.0.0",
 ]
 
 [project.scripts]
-dataset-analyzer = "app.main:main"
+datalens = "datalens.__main__:app"
+dataset-stats = "datalens.__main__:app"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src", "app"]
+only-include = ["__init__.py", "__main__.py", "core"]
 
-[tool.hatch.build.targets.sdist]
-include = ["src", "app", "README.md", "ARCHITECTURE.md"]
-
-[tool.ruff]
-line-length = 100
-src = ["src", "app"]
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP"]
+[tool.hatch.build.targets.wheel.sources]
+"" = "datalens"

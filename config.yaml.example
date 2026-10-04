@@ -1,0 +1,42 @@
+# Copy this file to config.yaml (or anywhere) and edit it, then load it with:
+#
+#   from core.config import load_config
+#   from core.orchestrator import run_analysis
+#   result = run_analysis(load_config("config.yaml"))
+#
+# Only `root` and `columns` are required — every other key below shows its
+# default and may be omitted.
+
+# Dataset root directory. Subfolders under `root` define the default
+# partition key down to each file's parent directory.
+root: /path/to/dataset
+
+# Physical column name → accumulator kind.
+# Kinds available out of the box: numeric, categorical, cardinality, count.
+columns:
+  charge: categorical
+  mz: numeric
+
+# Glob matched against each file name.
+file_pattern: "*.parquet"
+
+# Rows read per record batch during the map phase.
+batch_size: 65536
+
+# Process pool size. Omit (or null) to use all CPUs; 1 runs serially.
+workers: null
+
+# If set, only the first N folder segments under `root` form the partition
+# key. Omit (or null) to use all parent folders.
+partition_depth: null
+
+# Track total rows per partition.
+include_row_count: true
+
+# Keep only the top-N categories per categorical metric. Omit (or null) for
+# no truncation.
+top_categories: null
+
+# Glob pattern → reader kind, for files whose extension doesn't already pick
+# the right reader.
+readers: {}
