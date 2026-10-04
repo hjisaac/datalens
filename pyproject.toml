@@ -16,6 +16,10 @@ dependencies = [
     "rich>=13.0.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/hjisaac/datalens"
+Repository = "https://github.com/hjisaac/datalens"
+
 [project.optional-dependencies]
 parquet = [
     "pyarrow>=10.0.0",

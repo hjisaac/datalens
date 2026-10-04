@@ -33,14 +33,22 @@ DataLens is a lightweight, high-performance library for computing corpus-level s
 
 ## Installation
 
-### Standard Installation
+### From GitHub
 ```bash
-pip install .
+pip install git+https://github.com/hjisaac/datalens.git
+
+# With optional Parquet support:
+pip install "datalens[parquet] @ git+https://github.com/hjisaac/datalens.git"
 ```
 
-### With Optional Parquet Support
+### Local Development Installation
 ```bash
-pip install ".[parquet]"
+# Clone the repository
+git clone git@github.com:hjisaac/datalens.git
+cd datalens
+
+# Install in editable mode
+pip install -e ".[dev]"
 ```
 
 ---
