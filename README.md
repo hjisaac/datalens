@@ -60,6 +60,12 @@ pip install git+https://github.com/hjisaac/datalens.git
 
 # With optional Parquet support:
 pip install "datalens[parquet] @ git+https://github.com/hjisaac/datalens.git"
+
+# With Model Context Protocol (MCP) server support:
+pip install "datalens[mcp] @ git+https://github.com/hjisaac/datalens.git"
+
+# With all extras (Parquet + MCP):
+pip install "datalens[all] @ git+https://github.com/hjisaac/datalens.git"
 ```
 
 ### Local Development Installation
@@ -184,6 +190,39 @@ partition_depth: null
 # Keep only top-N categories (null = all)
 top_categories: 10
 ```
+
+---
+
+## Model Context Protocol (MCP) Server
+
+DataLens includes a native **Model Context Protocol (MCP)** server that equips AI assistants (Claude Desktop, Cursor, Antigravity, Gemini) to inspect and profile datasets directly.
+
+### Starting the Server
+```bash
+datalens mcp
+# or via standalone binary
+datalens-mcp
+```
+
+### Adding to Claude Desktop / Cursor
+Add the following to your MCP client configuration (e.g. `claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "datalens": {
+      "command": "datalens",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### Available MCP Tools & Capabilities
+* **`inspect_dataset`**: Inspects files or directories without reading them into memory. Infers schema, data types, null counts, and recommends optimal accumulator mappings.
+* **`compute_statistics`**: Runs distributed Map-Reduce statistics across tabular datasets with custom metric specifications.
+* **`profile_dataset`**: One-click profiling: automatically discovers schemas, maps columns, and returns a complete statistical report.
+* **Resource `datalens://workspace/datasets`**: Lists dataset files in the current workspace.
+* **Prompt `profile_and_analyze`**: Guides LLM agents through structured distribution analysis, outlier detection, and data reporting.
 
 ---
 
