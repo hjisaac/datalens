@@ -27,6 +27,8 @@ _DEFAULTS: dict[str, Any] = {
     "include_row_count": True,
     "top_categories": None,
     "readers": {},
+    "quantiles": None,
+    "quantile_compression": 100.0,
 }
 
 
@@ -47,12 +49,19 @@ class AnalysisConfig:
     include_row_count: bool = True
     top_categories: int | None = None
     readers: dict[str, str] = field(default_factory=dict)
+    quantiles: list[float] | None = None
+    quantile_compression: float = 100.0
 
     def __post_init__(self) -> None:
         if self.root is not None:
             self.root = Path(self.root)
         self.columns = dict(self.columns)
         self.readers = dict(self.readers)
+        if self.quantiles is not None:
+            self.quantiles = [float(q) for q in self.quantiles]
+            for q in self.quantiles:
+                if not (0.0 < q < 1.0):
+                    raise ValueError(f"Quantile values must be between 0.0 and 1.0 exclusive, got {q}")
         self._validate()
 
     def _validate(self) -> None:
@@ -83,9 +92,6 @@ class AnalysisConfig:
         """Return a plain dictionary of the configuration."""
         return config_summary(self)
 
-
-# Alias for legacy compatibility
-StatsConfig = AnalysisConfig
 
 
 def build_config(data: Mapping[str, Any] | AnalysisConfig | DictConfig) -> AnalysisConfig:

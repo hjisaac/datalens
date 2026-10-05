@@ -5,10 +5,10 @@ from .accumulators import (
     CategoricalAccumulator,
     CountAccumulator,
     NumericAccumulator,
+    QuantileAccumulator,
 )
 from .config import (
     AnalysisConfig,
-    StatsConfig,
     boot_config,
     build_config,
     config_summary,
@@ -34,7 +34,7 @@ __all__ = [
     "FileTask",
     "NumericAccumulator",
     "PartialStats",
-    "StatsConfig",
+    "QuantileAccumulator",
     "Task",
     "boot_config",
     "build_config",

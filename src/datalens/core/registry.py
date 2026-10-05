@@ -48,6 +48,8 @@ class Accumulator(ABC):
             existing = Accumulator._registry[cls.kind].__name__
             raise ValueError(f"Accumulator kind {cls.kind!r} is already registered to {existing}")
         Accumulator._registry[cls.kind] = cls
+        for alias in getattr(cls, "aliases", ()):
+            Accumulator._registry[alias] = cls
 
 
 def create_accumulator(kind: AccKind) -> Accumulator:
