@@ -27,14 +27,19 @@ parquet = [
 mcp = [
     "mcp>=1.0.0",
 ]
+viz = [
+    "matplotlib>=3.5.0",
+]
 dev = [
     "pytest>=7.0",
     "pyarrow>=10.0.0",
     "mcp>=1.0.0",
+    "matplotlib>=3.5.0",
 ]
 all = [
     "pyarrow>=10.0.0",
     "mcp>=1.0.0",
+    "matplotlib>=3.5.0",
 ]
 
 [project.scripts]

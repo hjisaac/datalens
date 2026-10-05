@@ -68,6 +68,31 @@ def run_command(
         "--batch-size",
         help="Record batch size (overrides config).",
     ),
+    plots: bool = typer.Option(
+        True,
+        "--plots/--no-plots",
+        help="Generate statistical distribution plots and figures (default: enabled).",
+    ),
+    plot_dir: Optional[Path] = typer.Option(
+        None,
+        "--plot-dir",
+        help="Directory to save generated plots (default: 'plots').",
+    ),
+    plot_format: str = typer.Option(
+        "png",
+        "--plot-format",
+        help="Plot image format ('png', 'svg', 'pdf').",
+    ),
+    plot_style: str = typer.Option(
+        "datalens",
+        "--plot-style",
+        help="Plot style theme ('datalens', 'paper', 'dark').",
+    ),
+    captions: bool = typer.Option(
+        True,
+        "--captions/--no-captions",
+        help="Include in-figure titles and statistical callout boxes. Set to --no-captions for academic papers.",
+    ),
     verbose: bool = typer.Option(
         False,
         "-v",
@@ -107,6 +132,24 @@ def run_command(
         result.to_json(output)
         if not quiet:
             console.print(f"[green]Results written to[/green] {output}")
+
+    if plots:
+        target_dir = plot_dir or getattr(config, "plot_dir", None) or Path("plots")
+        try:
+            generated = result.plot(
+                out_dir=target_dir,
+                format=plot_format,
+                captions=captions,
+                style=plot_style,
+            )
+            if not quiet and generated:
+                console.print(f"[green]Generated {len(generated)} plot(s) in[/green] [bold]{target_dir}/[/bold]")
+                for name, path in generated.items():
+                    console.print(f"  • [cyan]{name}[/cyan] → {path.name}")
+        except Exception as exc:
+            logger.warning("Could not generate plots: %s", exc)
+            if not quiet:
+                console.print(f"[yellow]Warning: Could not generate plots:[/yellow] {exc}")
 
     if not quiet and not output:
         console.print_json(json.dumps(result.to_dict()))

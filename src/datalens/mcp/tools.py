@@ -261,3 +261,44 @@ def profile_dataset(
         "schema": inspection["columns"],
         "statistics": stats,
     }
+
+
+def generate_dataset_plots(
+    path: str,
+    out_dir: str = "plots",
+    format: str = "png",
+    captions: bool = True,
+    style: str = "datalens",
+) -> dict[str, Any]:
+    """Profile a dataset and generate publication-ready statistical plots (quantile, categorical, numeric).
+
+    Args:
+        path: Path to dataset file or directory.
+        out_dir: Target directory to write plot images.
+        format: Plot file format ('png', 'svg', 'pdf').
+        captions: If False, strips in-figure titles and callout boxes for academic paper inclusion.
+        style: Visual style preset ('datalens', 'paper', 'dark').
+    """
+    from ..viz import generate_plots
+
+    profile = profile_dataset(path)
+    stats = profile.get("statistics")
+    if not stats or not stats.get("groups"):
+        return {"status": "no_data", "plots": {}}
+
+    generated = generate_plots(
+        stats,
+        out_dir=out_dir,
+        format=format,
+        captions=captions,
+        style=style,
+    )
+    return {
+        "status": "success",
+        "output_directory": str(Path(out_dir).resolve()),
+        "format": format,
+        "style": style,
+        "captions": captions,
+        "plots": {k: str(p.resolve()) for k, p in generated.items()},
+    }
+

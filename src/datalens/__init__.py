@@ -21,6 +21,16 @@ from .core import (
     resolve_tasks,
     run_analysis,
 )
+from .viz import (
+    apply_style,
+    generate_plots,
+    get_palette,
+    get_style_rc,
+    plot_categorical_frequency,
+    plot_numeric_summary,
+    plot_partition_comparison,
+    plot_quantile_distribution,
+)
 
 __all__ = [
     "Accumulator",
@@ -35,9 +45,17 @@ __all__ = [
     "PartialStats",
     "QuantileAccumulator",
     "Task",
+    "apply_style",
     "build_config",
     "discover_tasks",
+    "generate_plots",
+    "get_palette",
+    "get_style_rc",
     "load_config",
+    "plot_categorical_frequency",
+    "plot_numeric_summary",
+    "plot_partition_comparison",
+    "plot_quantile_distribution",
     "resolve_tasks",
     "run_analysis",
 ]

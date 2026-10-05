@@ -25,6 +25,7 @@ except ImportError:
 from .tools import (
     SUPPORTED_EXTENSIONS,
     compute_statistics as _compute_statistics,
+    generate_dataset_plots as _generate_dataset_plots,
     inspect_dataset as _inspect_dataset,
     profile_dataset as _profile_dataset,
 )
@@ -110,6 +111,31 @@ def create_mcp_server() -> MCPServer:
             include_quantiles=include_quantiles,
             max_categories=max_categories,
             workers=workers,
+        )
+        return json.dumps(data, indent=2, default=str)
+
+    @server.tool(
+        name="generate_dataset_plots",
+        description=(
+            "Generate publication-ready statistical figures (quantile distributions, category frequencies, "
+            "partition comparisons) for any dataset. Supports 'datalens', 'paper' (academic), and 'dark' styles, "
+            "and optional figure captions for paper inclusion."
+        ),
+    )
+    def generate_dataset_plots(
+        path: str,
+        out_dir: str = "plots",
+        format: str = "png",
+        captions: bool = True,
+        style: str = "datalens",
+    ) -> str:
+        """Generate statistical figures on disk."""
+        data = _generate_dataset_plots(
+            path=path,
+            out_dir=out_dir,
+            format=format,
+            captions=captions,
+            style=style,
         )
         return json.dumps(data, indent=2, default=str)
 
