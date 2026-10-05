@@ -139,3 +139,47 @@ def test_cli_mcp_help() -> None:
     res = runner.invoke(app, ["mcp", "--help"])
     assert res.exit_code == 0
     assert "Model Context Protocol" in res.output or "mcp" in res.output
+
+
+def test_inspect_dataset_empty_directory(tmp_path: Path) -> None:
+    empty_dir = tmp_path / "empty_dir"
+    empty_dir.mkdir()
+    with pytest.raises(ValueError, match="No supported tabular dataset files found"):
+        inspect_dataset(str(empty_dir))
+
+
+def test_mcp_profile_jsonl(tmp_path: Path) -> None:
+    jsonl_file = tmp_path / "stream.jsonl"
+    jsonl_file.write_text(
+        '{"speed": 100.5, "device": "sensor_1"}\n'
+        '{"speed": 120.0, "device": "sensor_2"}\n'
+        '{"speed": 98.2, "device": "sensor_1"}\n',
+        encoding="utf-8",
+    )
+    profile = profile_dataset(str(jsonl_file))
+    assert profile["dataset"]["format"] == "jsonl"
+    assert profile["dataset"]["file_count"] == 1
+    assert "speed" in profile["schema"]
+    assert profile["schema"]["speed"]["type"] == "float"
+    assert "statistics" in profile
+    group = profile["statistics"]["groups"]["_all"]
+    assert group["rows"] == 3
+    assert group["speed"]["count"] == 3
+    assert "p50" in group["speed"]
+    assert group["device"]["counts"]["sensor_1"] == 2
+
+
+def test_mcp_resources_and_prompts_execution(sample_csv: Path) -> None:
+    server = create_mcp_server()
+
+    # Test reading resource
+    resources = asyncio.run(server.list_resources())
+    uri = resources[0].uri
+    res_contents = asyncio.run(server.read_resource(uri))
+    assert len(res_contents) > 0
+
+    # Test getting prompt
+    prompt = asyncio.run(server.get_prompt("profile_and_analyze", {"path": str(sample_csv)}))
+    assert prompt.messages
+    assert "inspect_dataset" in prompt.messages[0].content.text
+

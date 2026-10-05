@@ -60,8 +60,8 @@ class AnalysisConfig:
         if self.quantiles is not None:
             self.quantiles = [float(q) for q in self.quantiles]
             for q in self.quantiles:
-                if not (0.0 < q < 1.0):
-                    raise ValueError(f"Quantile values must be between 0.0 and 1.0 exclusive, got {q}")
+                if not (0.0 <= q <= 1.0):
+                    raise ValueError(f"Quantile values must be between 0.0 and 1.0 inclusive, got {q}")
         self._validate()
 
     def _validate(self) -> None:

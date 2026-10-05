@@ -131,8 +131,119 @@ def test_pipeline_with_quantile_accumulator() -> None:
 
 
 def test_quantile_pipeline_execution() -> None:
-    config = AnalysisConfig(columns={"score": "quantile"})
+    config = AnalysisConfig(columns={"score": "quantile"}, quantiles=[0.0, 0.5, 1.0])
     records = [{"score": i} for i in range(1, 101)]
     result = run_analysis(config, source=records)
-    assert result.groups[()]["score"]["count"] == 100
-    assert result.groups[()]["score"]["p50"] == pytest.approx(50.5, abs=1.0)
+    score_res = result.groups[()]["score"]
+    assert score_res["count"] == 100
+    assert score_res["p00"] == 1.0
+    assert score_res["p50"] == pytest.approx(50.5, abs=1.0)
+    assert score_res["p100"] == 100.0
+
+
+def test_numeric_accumulator_comprehensive() -> None:
+    from datalens import NumericAccumulator
+
+    acc = NumericAccumulator()
+    # Empty state
+    empty_res = acc.result()
+    assert empty_res["count"] == 0
+    assert empty_res["mean"] is None
+    assert empty_res["std"] is None
+    assert empty_res["min"] is None
+    assert empty_res["max"] is None
+
+    # Empty array update
+    acc.update(np.array([]))
+    assert acc.result()["count"] == 0
+
+    # All-NaN update
+    acc.update(np.array([np.nan, np.nan]))
+    assert acc.result()["count"] == 0
+
+    # Normal update
+    acc.update(np.array([10.0, 20.0, 30.0]))
+    assert acc.result()["count"] == 3
+    assert acc.result()["mean"] == 20.0
+    assert acc.result()["min"] == 10.0
+    assert acc.result()["max"] == 30.0
+    assert acc.result()["std"] == pytest.approx(float(np.std([10.0, 20.0, 30.0])), rel=1e-5)
+
+    # Merge with empty
+    empty_acc = NumericAccumulator()
+    acc.merge(empty_acc)
+    assert acc.result()["count"] == 3
+
+    # Merge into empty
+    new_empty = NumericAccumulator()
+    new_empty.merge(acc)
+    assert new_empty.result()["count"] == 3
+    assert new_empty.result()["mean"] == 20.0
+
+    # Merge two non-empty
+    other = NumericAccumulator()
+    other.update(np.array([40.0, 50.0]))
+    acc.merge(other)
+    assert acc.result()["count"] == 5
+    assert acc.result()["mean"] == 30.0
+    assert acc.result()["min"] == 10.0
+    assert acc.result()["max"] == 50.0
+    assert acc.result()["std"] == pytest.approx(float(np.std([10.0, 20.0, 30.0, 40.0, 50.0])), rel=1e-5)
+
+
+def test_categorical_accumulator_comprehensive() -> None:
+    from datalens import CategoricalAccumulator
+
+    acc = CategoricalAccumulator()
+    assert acc.result()["unique"] == 0
+    assert acc.result()["counts"] == {}
+
+    acc.update(["apple", "banana", "apple", "cherry", "apple", "banana"])
+    res = acc.result()
+    assert res["unique"] == 3
+    assert res["counts"]["apple"] == 3
+    assert res["counts"]["banana"] == 2
+    assert res["counts"]["cherry"] == 1
+
+    # Test top truncation
+    res_top = acc.result(top=2)
+    assert res_top["unique"] == 3
+    assert len(res_top["counts"]) == 2
+    assert "cherry" not in res_top["counts"]
+
+    # Merge
+    other = CategoricalAccumulator()
+    other.update(["date", "banana"])
+    acc.merge(other)
+    assert acc.result()["unique"] == 4
+    assert acc.result()["counts"]["banana"] == 3
+    assert acc.result()["counts"]["date"] == 1
+
+
+def test_cardinality_accumulator_comprehensive() -> None:
+    from datalens import CardinalityAccumulator
+
+    acc = CardinalityAccumulator()
+    assert acc.result()["unique"] == 0
+
+    acc.update(["u1", "u2", "u1", None, "u3"])
+    assert acc.result()["unique"] == 3
+
+    other = CardinalityAccumulator()
+    other.update(["u3", "u4", "u5"])
+    acc.merge(other)
+    assert acc.result()["unique"] == 5
+
+
+def test_count_accumulator_comprehensive() -> None:
+    from datalens import CountAccumulator
+
+    acc = CountAccumulator()
+    assert acc.result()["count"] == 0
+
+    acc.update(15)
+    assert acc.result()["count"] == 15
+
+    other = CountAccumulator(count=25)
+    acc.merge(other)
+    assert acc.result()["count"] == 40
