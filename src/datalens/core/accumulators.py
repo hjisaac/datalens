@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -140,3 +140,187 @@ class CardinalityAccumulator(Accumulator):
     def result(self) -> dict[str, Any]:
         """Render the distinct count."""
         return {"unique": len(self.values)}
+
+
+@dataclass
+class QuantileAccumulator(Accumulator):
+    """Streaming quantile/percentile estimator using Ted Dunning's T-Digest (MergingDigest).
+
+    Maintains bounded O(delta) memory while providing high accuracy across both
+    central percentiles (median/P50, IQR) and extreme distribution tails (P01, P99, P99.9).
+    """
+
+    kind: ClassVar[str] = "quantile"
+    aliases: ClassVar[tuple[str, ...]] = ("percentiles", "tdigest")
+
+    delta: float = 100.0
+    means: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.float64))
+    weights: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.float64))
+    buffer: list[np.ndarray] = field(default_factory=list)
+    min_val: float = math.inf
+    max_val: float = -math.inf
+    total_weight: float = 0.0
+
+    def update(self, values: np.ndarray) -> None:
+        """Fold a batch of numeric values into the digest."""
+        arr = np.asarray(values, dtype=np.float64)
+        if arr.size == 0:
+            return
+        finite = arr[~np.isnan(arr)]
+        if finite.size == 0:
+            return
+        self.min_val = min(self.min_val, float(finite.min()))
+        self.max_val = max(self.max_val, float(finite.max()))
+        self.buffer.append(finite)
+        if sum(len(b) for b in self.buffer) > max(1000, int(5 * self.delta)):
+            self.compress()
+
+    def compress(self) -> None:
+        """Compress buffered points and existing centroids into merged centroids."""
+        if not self.buffer and len(self.means) == 0:
+            return
+        if self.buffer:
+            buf_vals = np.concatenate(self.buffer)
+            buf_weights = np.ones(buf_vals.size, dtype=np.float64)
+            self.buffer = []
+            if len(self.means) > 0:
+                all_means = np.concatenate([self.means, buf_vals])
+                all_weights = np.concatenate([self.weights, buf_weights])
+            else:
+                all_means = buf_vals
+                all_weights = buf_weights
+        else:
+            all_means = self.means
+            all_weights = self.weights
+
+        order = np.argsort(all_means)
+        means = all_means[order]
+        weights = all_weights[order]
+        total_w = float(weights.sum())
+        if total_w == 0:
+            return
+
+        delta = self.delta
+
+        def k(q: float) -> float:
+            return (delta / (2.0 * math.pi)) * math.asin(max(-1.0, min(1.0, 2.0 * q - 1.0)))
+
+        new_means: list[float] = []
+        new_weights: list[float] = []
+
+        w_cum = 0.0
+        cur_mu = float(means[0])
+        cur_w = float(weights[0])
+        q0 = 0.0
+
+        for i in range(1, len(means)):
+            cand_w = cur_w + float(weights[i])
+            q1 = min(1.0, (w_cum + cand_w) / total_w)
+            if k(q1) - k(q0) <= 1.0:
+                cur_mu = (cur_mu * cur_w + float(means[i]) * float(weights[i])) / cand_w
+                cur_w = cand_w
+            else:
+                new_means.append(cur_mu)
+                new_weights.append(cur_w)
+                w_cum += cur_w
+                q0 = w_cum / total_w
+                cur_mu = float(means[i])
+                cur_w = float(weights[i])
+
+        new_means.append(cur_mu)
+        new_weights.append(cur_w)
+        self.means = np.array(new_means, dtype=np.float64)
+        self.weights = np.array(new_weights, dtype=np.float64)
+        self.total_weight = total_w
+
+    def merge(self, other: QuantileAccumulator) -> QuantileAccumulator:
+        """Merge another quantile accumulator into this one."""
+        self.compress()
+        other.compress()
+        if other.total_weight == 0:
+            return self
+        if self.total_weight == 0:
+            self.means = other.means.copy()
+            self.weights = other.weights.copy()
+            self.min_val = other.min_val
+            self.max_val = other.max_val
+            self.total_weight = other.total_weight
+            return self
+
+        self.min_val = min(self.min_val, other.min_val)
+        self.max_val = max(self.max_val, other.max_val)
+        self.means = np.concatenate([self.means, other.means])
+        self.weights = np.concatenate([self.weights, other.weights])
+        self.buffer = []
+        self.compress()
+        return self
+
+    def quantile(self, q: float) -> float | None:
+        """Compute the estimated value at quantile q in [0, 1]."""
+        self.compress()
+        if len(self.means) == 0:
+            return None
+        if len(self.means) == 1 or q <= 0.0:
+            return self.min_val
+        if q >= 1.0:
+            return self.max_val
+
+        total_w = self.total_weight
+        target = q * total_w
+        cum_weights = np.cumsum(self.weights) - self.weights / 2.0
+
+        if target < cum_weights[0]:
+            return self.min_val + (target / cum_weights[0]) * (float(self.means[0]) - self.min_val)
+        if target > cum_weights[-1]:
+            return float(self.means[-1]) + ((target - cum_weights[-1]) / (total_w - cum_weights[-1])) * (self.max_val - float(self.means[-1]))
+
+        idx = int(np.searchsorted(cum_weights, target))
+        if idx < len(cum_weights) and cum_weights[idx] == target:
+            return float(self.means[idx])
+        left = idx - 1
+        right = idx
+        span = cum_weights[right] - cum_weights[left]
+        if span == 0:
+            return float(self.means[left])
+        fraction = (target - cum_weights[left]) / span
+        return float(self.means[left] + fraction * (self.means[right] - self.means[left]))
+
+    def result(self, quantiles: Sequence[float] | None = None) -> dict[str, Any]:
+        """Render count, min, max, iqr, and percentiles."""
+        self.compress()
+        if self.total_weight == 0:
+            return {
+                "count": 0,
+                "min": None,
+                "max": None,
+                "p01": None,
+                "p05": None,
+                "p25": None,
+                "p50": None,
+                "p75": None,
+                "p90": None,
+                "p95": None,
+                "p99": None,
+                "iqr": None,
+            }
+
+        target_quantiles = quantiles if quantiles is not None else [0.01, 0.05, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99]
+        res: dict[str, Any] = {
+            "count": int(self.total_weight),
+            "min": self.min_val,
+            "max": self.max_val,
+        }
+
+        for q in sorted(target_quantiles):
+            val = self.quantile(q)
+            pct = q * 100
+            key = f"p{int(pct):02d}" if pct.is_integer() else f"p{pct:g}"
+            res[key] = val
+
+        p25 = self.quantile(0.25)
+        p75 = self.quantile(0.75)
+        res["iqr"] = (p75 - p25) if (p75 is not None and p25 is not None) else None
+        return res
+
+
+TDigestAccumulator = QuantileAccumulator

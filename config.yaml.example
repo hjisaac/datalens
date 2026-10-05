@@ -12,10 +12,14 @@
 root: /path/to/dataset
 
 # Physical column name → accumulator kind.
-# Kinds available out of the box: numeric, categorical, cardinality, count.
+# Kinds available out of the box: numeric, quantile (or tdigest), categorical, cardinality, count.
 columns:
   charge: categorical
   mz: numeric
+  latency_ms: quantile
+
+# Optional: custom quantiles to compute (defaults to [0.01, 0.05, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99])
+# quantiles: [0.01, 0.05, 0.25, 0.50, 0.75, 0.90, 0.95, 0.99, 0.999]
 
 # Glob matched against each file name.
 file_pattern: "*.parquet"

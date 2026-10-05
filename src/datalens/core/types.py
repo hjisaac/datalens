@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-AccKind = Literal["numeric", "categorical", "cardinality", "count"]
+AccKind = Literal["numeric", "categorical", "cardinality", "count", "quantile", "percentiles", "tdigest"]
 
 
 class Task(ABC):

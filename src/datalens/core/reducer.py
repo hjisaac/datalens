@@ -25,6 +25,8 @@ def render_partial(key: tuple[str, ...], partial: PartialStats) -> dict:
         kind = config.columns[column]
         if kind == "categorical":
             output[column] = accumulator.result(top=config.top_categories)
+        elif kind in ("quantile", "percentiles", "tdigest"):
+            output[column] = accumulator.result(quantiles=getattr(config, "quantiles", None))
         else:
             output[column] = accumulator.result()
     return output

@@ -5,6 +5,8 @@ from .accumulators import (
     CategoricalAccumulator,
     CountAccumulator,
     NumericAccumulator,
+    QuantileAccumulator,
+    TDigestAccumulator,
 )
 from .config import (
     AnalysisConfig,
@@ -34,7 +36,9 @@ __all__ = [
     "FileTask",
     "NumericAccumulator",
     "PartialStats",
+    "QuantileAccumulator",
     "StatsConfig",
+    "TDigestAccumulator",
     "Task",
     "boot_config",
     "build_config",

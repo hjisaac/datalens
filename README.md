@@ -25,6 +25,7 @@ DataLens is a lightweight, high-performance library for computing corpus-level s
 | Metric Kind | Description | Outputs |
 | :--- | :--- | :--- |
 | `numeric` | Streaming summary via Welford's algorithm | `count`, `mean`, `std`, `min`, `max` |
+| `quantile` / `tdigest` | Streaming percentiles via Ted Dunning's T-Digest | `count`, `min`, `max`, `p01`–`p99`, `iqr` |
 | `categorical` | Exact frequency counter with optional top-N truncation | `unique`, `counts: {value: frequency}` |
 | `cardinality` | Exact distinct-value tracking | `unique` |
 | `count` | Row / event counter | `count` |
