@@ -22,6 +22,10 @@ ENV/
 # Temporary generated test files
 out.json
 stats.json
+plots/
+*.png
+*.svg
+
 
 # IDE and Editor files
 .idea/

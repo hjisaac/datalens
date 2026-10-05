@@ -24,16 +24,27 @@ Repository = "https://github.com/hjisaac/datalens"
 parquet = [
     "pyarrow>=10.0.0",
 ]
+mcp = [
+    "mcp>=1.0.0",
+]
+viz = [
+    "matplotlib>=3.5.0",
+]
 dev = [
     "pytest>=7.0",
     "pyarrow>=10.0.0",
+    "mcp>=1.0.0",
+    "matplotlib>=3.5.0",
 ]
 all = [
     "pyarrow>=10.0.0",
+    "mcp>=1.0.0",
+    "matplotlib>=3.5.0",
 ]
 
 [project.scripts]
 datalens = "datalens.__main__:app"
+datalens-mcp = "datalens.mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/datalens"]

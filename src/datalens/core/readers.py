@@ -85,7 +85,7 @@ def _read_parquet_batches(path: Path, columns: Sequence[str], batch_size: int) -
     except ImportError as exc:
         raise ImportError(
             "pyarrow is required to read Parquet files. "
-            "Install it with: pip install 'dataset-stats[parquet]' or pip install pyarrow"
+            "Install it with: pip install 'datalens[parquet]' or pip install pyarrow"
         ) from exc
 
     parquet_file = pq.ParquetFile(path)

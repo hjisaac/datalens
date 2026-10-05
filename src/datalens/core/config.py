@@ -29,6 +29,11 @@ _DEFAULTS: dict[str, Any] = {
     "readers": {},
     "quantiles": None,
     "quantile_compression": 100.0,
+    "plots": False,
+    "plot_dir": "plots",
+    "plot_format": "png",
+    "plot_captions": True,
+    "plot_style": "datalens",
 }
 
 
@@ -51,6 +56,11 @@ class AnalysisConfig:
     readers: dict[str, str] = field(default_factory=dict)
     quantiles: list[float] | None = None
     quantile_compression: float = 100.0
+    plots: bool = False
+    plot_dir: str | Path = "plots"
+    plot_format: str = "png"
+    plot_captions: bool = True
+    plot_style: str = "datalens"
 
     def __post_init__(self) -> None:
         if self.root is not None:
@@ -60,8 +70,8 @@ class AnalysisConfig:
         if self.quantiles is not None:
             self.quantiles = [float(q) for q in self.quantiles]
             for q in self.quantiles:
-                if not (0.0 < q < 1.0):
-                    raise ValueError(f"Quantile values must be between 0.0 and 1.0 exclusive, got {q}")
+                if not (0.0 <= q <= 1.0):
+                    raise ValueError(f"Quantile values must be between 0.0 and 1.0 inclusive, got {q}")
         self._validate()
 
     def _validate(self) -> None:

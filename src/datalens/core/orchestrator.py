@@ -59,12 +59,25 @@ def run_analysis(
         for key, partials in sorted(groups.items())
     }
 
-    return AnalysisResult(
+    result = AnalysisResult(
         groups=results,
         files_processed=files_processed,
         files_failed=files_failed,
         config_summary=config_module.config_summary(config),
     )
+
+    if getattr(config, "plots", False):
+        try:
+            result.plot(
+                out_dir=getattr(config, "plot_dir", "plots"),
+                format=getattr(config, "plot_format", "png"),
+                captions=getattr(config, "plot_captions", True),
+                style=getattr(config, "plot_style", "datalens"),
+            )
+        except Exception as exc:
+            logger.warning("Could not auto-generate plots: %s", exc)
+
+    return result
 
 
 def _map_all(

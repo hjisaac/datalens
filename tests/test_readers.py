@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from datalens.core.config import build_config
 from datalens.core.orchestrator import run_analysis
 
@@ -74,4 +76,45 @@ def test_parquet_without_pyarrow_raises_importerror(tmp_path: Path, monkeypatch)
     monkeypatch.setitem(sys.modules, "pyarrow.parquet", None)
     with pytest.raises(ImportError, match="pyarrow is required to read Parquet files"):
         list(read_batches(dummy, columns=["a"], batch_size=10))
+
+
+def test_run_analysis_tsv(tmp_path: Path) -> None:
+    tsv_path = tmp_path / "data.tsv"
+    tsv_path.write_text("city\tpopulation\nParis\t2.1\nLyon\t0.5\nParis\t2.1\n", encoding="utf-8")
+
+    config = build_config(
+        {
+            "root": tmp_path,
+            "columns": {"city": "categorical", "population": "numeric"},
+            "file_pattern": "*.tsv",
+            "workers": 1,
+        }
+    )
+
+    result = run_analysis(config)
+    group = result.groups[()]
+    assert group["rows"] == 3
+    assert group["city"]["counts"]["Paris"] == 2
+    assert group["population"]["mean"] == pytest.approx((2.1 + 0.5 + 2.1) / 3, rel=1e-4)
+
+
+def test_missing_column_handled_gracefully(tmp_path: Path) -> None:
+    csv_path = tmp_path / "partial.csv"
+    csv_path.write_text("existing_col\n100\n200\n", encoding="utf-8")
+
+    config = build_config(
+        {
+            "root": tmp_path,
+            "columns": {"existing_col": "numeric", "missing_col": "numeric"},
+            "file_pattern": "*.csv",
+            "workers": 1,
+        }
+    )
+
+    result = run_analysis(config)
+    group = result.groups[()]
+    assert group["rows"] == 2
+    assert group["existing_col"]["count"] == 2
+    assert group["missing_col"]["count"] == 0
+
 

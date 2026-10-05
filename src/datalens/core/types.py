@@ -135,3 +135,34 @@ class AnalysisResult:
         target.parent.mkdir(parents=True, exist_ok=True)
         with target.open("w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=indent)
+
+    def plot(
+        self,
+        out_dir: str | Path = "plots",
+        format: str = "png",
+        captions: bool = True,
+        style: str = "datalens",
+        dpi: int = 300,
+    ) -> dict[str, Path]:
+        """Generate statistical plots (quantile, categorical, numeric, partition comparisons) for the results.
+
+        Args:
+            out_dir: Directory where figures will be saved (default: 'plots').
+            format: Output file format ('png', 'svg', 'pdf').
+            captions: Whether to include in-figure titles and statistical callout boxes. Set to False for academic papers.
+            style: Visual style preset ('datalens', 'paper', 'dark') or custom style.
+            dpi: Figure resolution in dots per inch (default: 300).
+
+        Returns:
+            Dictionary mapping plot names to saved file Paths.
+        """
+        from ..viz import generate_plots
+
+        return generate_plots(
+            self,
+            out_dir=out_dir,
+            format=format,
+            captions=captions,
+            style=style,
+            dpi=dpi,
+        )

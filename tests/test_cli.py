@@ -47,3 +47,25 @@ def test_cli_execution_with_output_file(tmp_path: Path) -> None:
 def test_cli_missing_config() -> None:
     result = runner.invoke(app, ["/nonexistent/path/config.yaml"])
     assert result.exit_code != 0
+
+
+def test_cli_explicit_run_subcommand(tmp_path: Path) -> None:
+    data_dir = tmp_path / "data"
+    data_dir.mkdir(parents=True)
+    table = pa.table({"val": [5.0, 15.0]})
+    pq.write_table(table, data_dir / "test.parquet")
+
+    cfg_path = tmp_path / "config.yaml"
+    with cfg_path.open("w", encoding="utf-8") as f:
+        yaml.dump(
+            {
+                "root": str(data_dir),
+                "columns": {"val": "numeric"},
+                "workers": 1,
+            },
+            f,
+        )
+
+    result = runner.invoke(app, ["run", str(cfg_path)])
+    assert result.exit_code == 0
+

@@ -10,29 +10,32 @@ from typing import Any
 from .types import DataTask, FileTask, Task
 
 
-def discover_tasks(config: Any) -> list[FileTask]:
-    """Walk ``config.root`` and return one :class:`FileTask` per matching file.
+def discover_tasks(config: Any, root: Path | str | None = None) -> list[FileTask]:
+    """Walk ``root`` (or ``config.root``) and return one :class:`FileTask` per matching file.
 
     The partition key for each task is the sequence of folder names from
     ``root`` down to the file's parent directory. For example::
 
-        root/lcfm/PXD000561/run1.parquet  →  partition (\"lcfm\", \"PXD000561\")
+        root/lcfm/PXD000561/run1.parquet  →  partition ("lcfm", "PXD000561")
         root/train_0.parquet              →  partition ()
     """
-    root = Path(config.root).resolve()
-    if not root.is_dir():
-        raise FileNotFoundError(f"Root directory not found: {root}")
+    target_root = root if root is not None else getattr(config, "root", None)
+    if target_root is None:
+        raise ValueError("No root directory specified in config or arguments.")
+    root_path = Path(target_root).resolve()
+    if not root_path.is_dir():
+        raise FileNotFoundError(f"Root directory not found: {root_path}")
 
     tasks: list[FileTask] = []
     pattern = getattr(config, "file_pattern", "*.parquet")
     depth = getattr(config, "partition_depth", None)
 
-    for dirpath, _, filenames in os.walk(root):
+    for dirpath, _, filenames in os.walk(root_path):
         for name in sorted(filenames):
             if not fnmatch.fnmatch(name, pattern):
                 continue
             path = Path(dirpath) / name
-            partition = _partition_key(root, path.parent, depth)
+            partition = _partition_key(root_path, path.parent, depth)
             tasks.append(FileTask(path=str(path), partition=partition))
     tasks.sort(key=lambda task: (task.partition, task.path))
     return tasks
@@ -47,7 +50,7 @@ def resolve_tasks(config: Any, source: Any = None) -> list[Task]:
         if isinstance(source, (str, Path)):
             src_path = Path(source).resolve()
             if src_path.is_dir():
-                return discover_tasks(config)
+                return discover_tasks(config, root=src_path)
             if src_path.is_file():
                 return [FileTask(path=str(src_path))]
             raise FileNotFoundError(f"Source path not found: {source}")
@@ -80,6 +83,9 @@ def resolve_tasks(config: Any, source: Any = None) -> list[Task]:
         return [DataTask(data=source)]
 
     if getattr(config, "root", None) is not None:
+        root_path = Path(config.root).resolve()
+        if root_path.is_file():
+            return [FileTask(path=str(root_path))]
         return discover_tasks(config)
 
     raise ValueError("No input source provided and config has no 'root' directory.")
