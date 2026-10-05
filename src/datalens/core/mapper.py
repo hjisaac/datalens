@@ -23,7 +23,7 @@ def fold_batch(batch: ColumnBatch, partial: PartialStats, config: Any) -> None:
         values = batch.column(column)
         acc = partial.metrics[column]
         match kind:
-            case "numeric" | "quantile" | "percentiles" | "tdigest":
+            case "numeric" | "quantile":
                 acc.update(numeric_values(values))
             case "categorical":
                 acc.update(v for v in values if v is not None)

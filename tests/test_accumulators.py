@@ -4,7 +4,7 @@ import math
 import numpy as np
 import pytest
 
-from datalens import AnalysisConfig, QuantileAccumulator, TDigestAccumulator, run_analysis
+from datalens import AnalysisConfig, QuantileAccumulator, run_analysis
 
 
 def test_quantile_accumulator_empty() -> None:
@@ -130,8 +130,8 @@ def test_pipeline_with_quantile_accumulator() -> None:
     assert "p99" in lat
 
 
-def test_tdigest_alias_in_pipeline() -> None:
-    config = AnalysisConfig(columns={"score": "tdigest"})
+def test_quantile_pipeline_execution() -> None:
+    config = AnalysisConfig(columns={"score": "quantile"})
     records = [{"score": i} for i in range(1, 101)]
     result = run_analysis(config, source=records)
     assert result.groups[()]["score"]["count"] == 100

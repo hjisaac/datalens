@@ -12,7 +12,7 @@
 root: /path/to/dataset
 
 # Physical column name → accumulator kind.
-# Kinds available out of the box: numeric, quantile (or tdigest), categorical, cardinality, count.
+# Kinds available out of the box: numeric, quantile, categorical, cardinality, count.
 columns:
   charge: categorical
   mz: numeric

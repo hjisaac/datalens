@@ -34,7 +34,6 @@ all = [
 
 [project.scripts]
 datalens = "datalens.__main__:app"
-dataset-stats = "datalens.__main__:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/datalens"]

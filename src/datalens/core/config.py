@@ -93,9 +93,6 @@ class AnalysisConfig:
         return config_summary(self)
 
 
-# Alias for legacy compatibility
-StatsConfig = AnalysisConfig
-
 
 def build_config(data: Mapping[str, Any] | AnalysisConfig | DictConfig) -> AnalysisConfig:
     """Layer ``data`` over defaults, validate, and return an :class:`AnalysisConfig`."""

@@ -151,7 +151,6 @@ class QuantileAccumulator(Accumulator):
     """
 
     kind: ClassVar[str] = "quantile"
-    aliases: ClassVar[tuple[str, ...]] = ("percentiles", "tdigest")
 
     delta: float = 100.0
     means: np.ndarray = field(default_factory=lambda: np.empty(0, dtype=np.float64))
@@ -322,5 +321,3 @@ class QuantileAccumulator(Accumulator):
         res["iqr"] = (p75 - p25) if (p75 is not None and p25 is not None) else None
         return res
 
-
-TDigestAccumulator = QuantileAccumulator

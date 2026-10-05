@@ -105,8 +105,6 @@ def test_public_package_api_import(tmp_path: Path) -> None:
         NumericAccumulator,
         PartialStats,
         QuantileAccumulator,
-        StatsConfig,
-        TDigestAccumulator,
         Task,
         build_config,
         discover_tasks,
@@ -121,13 +119,11 @@ def test_public_package_api_import(tmp_path: Path) -> None:
     assert callable(discover_tasks)
     assert callable(resolve_tasks)
     assert AnalysisConfig is not None
-    assert StatsConfig is AnalysisConfig
     assert AnalysisResult is not None
     assert DataTask is not None
     assert FileTask is not None
     assert NumericAccumulator is not None
     assert QuantileAccumulator is not None
-    assert TDigestAccumulator is QuantileAccumulator
 
 
 def test_run_analysis_in_memory_records() -> None:
