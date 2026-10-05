@@ -80,6 +80,9 @@ def resolve_tasks(config: Any, source: Any = None) -> list[Task]:
         return [DataTask(data=source)]
 
     if getattr(config, "root", None) is not None:
+        root_path = Path(config.root).resolve()
+        if root_path.is_file():
+            return [FileTask(path=str(root_path))]
         return discover_tasks(config)
 
     raise ValueError("No input source provided and config has no 'root' directory.")
