@@ -223,18 +223,27 @@ result = run_analysis(config)
 | `count` | Row / event counter | `count` |
 
 <details>
-<summary><b>Click to view throughput benchmarks (up to 24M+ rows/sec)</b></summary>
+<summary><b>Click to view empirical throughput benchmarks (up to ~20M rows/sec)</b></summary>
 
-Empirical measurements on a standard CPU core (1,000,000 rows, batch size 50,000):
+### Test Environment & Hardware Context
+- **CPU**: Intel Core i7-7820HQ (4 Cores, 8 Threads @ up to 3.90 GHz)
+- **Memory**: 16 GB DDR4 (15,566 MiB)
+- **OS / Kernel**: Linux 6.9.3 x86_64
+- **Runtime**: Python 3.11.11 with NumPy C-accelerated backend
+
+### Single-Core Empirical Measurements (1,000,000 Rows, Batch Size 50,000)
 
 | Component / Workload | Throughput | Latency (1M rows) | Memory Complexity |
 | :--- | :--- | :--- | :--- |
-| **`NumericAccumulator` (Welford)** | **~24.7M rows/s** | ~40.5 ms | $O(1)$ constant |
-| **Full Pipeline (Columnar Map-Reduce)** | **~2.84M rows/s** | ~352 ms | $O(1)$ batch-bounded |
-| **`QuantileAccumulator` (T-Digest)** | **~400K rows/s** | ~2.5 s | $O(C)$ centroid-bounded |
-| **Multi-Column (4 mixed metrics, 100k rows)** | **~205K rows/s** | ~487 ms | $O(1)$ bounded |
+| **`NumericAccumulator` (Welford)** | **~19.5M rows/s** | ~51.3 ms | $O(1)$ constant |
+| **Full Pipeline (Columnar Map-Reduce)** | **~3.43M rows/s** | ~291.7 ms | $O(1)$ batch-bounded |
+| **`QuantileAccumulator` (T-Digest + Reservoir)** | **~487K rows/s** | ~2.05 s | $O(C)$ centroid-bounded |
+| **Multi-Column (4 mixed metrics, 100k rows)** | **~296K rows/s** | ~337.5 ms | $O(1)$ bounded |
 
-> **Streaming Guarantee**: Because all statistics operate via online accumulators, memory usage remains strictly bounded regardless of dataset scale.
+### Multi-Core Parallel Scaling (4 Worker Processes)
+- **CSV Partition Map-Reduce**: Scaled from 1.74M rows/s (single worker) to **3.31M rows/s** (4 workers) — a **1.91x throughput speedup** over disk-bound tabular batches.
+
+> **Streaming Guarantee**: Because all accumulators operate via online streaming algorithms, memory usage remains strictly bounded regardless of whether the dataset contains 10,000 or 100,000,000 rows.
 
 </details>
 
