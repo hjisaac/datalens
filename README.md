@@ -109,6 +109,109 @@ sla:
 
 ---
 
+## Real-World Examples
+
+<details>
+<summary><b>Click to expand production examples (LLM Token Truncation, Microservices SLA, Multi-Partition Shards)</b></summary>
+
+### 1. LLM Pre-training & Fine-Tuning: Context Window SLA & Truncation Analytics
+In NLP dataset preparation, setting a sequence length cutoff (e.g. 512, 1024, or 4096 tokens) requires knowing the exact distribution tail and truncation impact across splits.
+
+```python
+from datalens import AnalysisConfig, run_analysis
+
+# Analyze token lengths across train/val/test parquet shards
+config = AnalysisConfig(
+    root="/data/nlp/tokenized_corpus",
+    file_pattern="*.parquet",
+    columns={
+        "token_count": "quantile",      # T-Digest percentiles + sample reservoir
+        "language": "categorical",
+        "doc_id": "cardinality",
+    },
+    partition_depth=1,                  # partitions: train, val, test
+    sla={"token_count": 512.0},         # Context window cutoff
+    plots=True,
+    plot_dir="./figures/token_dist",
+    plot_style="paper",                 # High-contrast, print-ready for academic papers
+    plot_captions=False,                # Strips in-figure titles for LaTeX figure captions
+)
+
+result = run_analysis(config)
+
+# Generate publication-grade beeswarm + box plot overlay for the paper:
+result.plot_beeswarm(
+    column="token_count",
+    output_path="./figures/token_beeswarm.pdf",
+    sla=512.0,
+    style="paper",
+    captions=False,
+)
+
+# Inspect exact truncation statistics:
+metrics = result.to_dict()["global"]["token_count"]
+print(f"P95: {metrics['p95']:.1f} tokens | P99: {metrics['p99']:.1f} tokens")
+print(f"Truncated Documents: {metrics['sla_exceeded_count']:,} ({metrics['sla_exceeded_pct']:.2f}%)")
+```
+
+---
+
+### 2. Microservices API Observability: Streaming Latency SLA Diagnostics
+Process millions of streaming JSONL / NDJSON access logs without memory spikes, tracking p95/p99 tail latency and HTTP status code distributions across worker processes.
+
+```python
+from datalens import AnalysisConfig, run_analysis
+
+config = AnalysisConfig(
+    root="/var/log/api_gateway",
+    file_pattern="access_*.jsonl",
+    columns={
+        "latency_ms": "quantile",
+        "status_code": "categorical",
+        "client_ip": "cardinality",
+        "payload_bytes": "numeric",
+    },
+    workers=16,                         # Multi-core streaming map-reduce
+    sla={"latency_ms": 200.0},          # 200ms latency SLA threshold
+    top_categories=10,
+    plots=True,
+    plot_dir="./dashboard_plots",
+    plot_style="dark",                  # Sleek dark theme for dashboard previews
+)
+
+result = run_analysis(config)
+result.to_json("api_sla_report.json")
+```
+
+---
+
+### 3. Multi-Partition Comparative Analysis across Shards
+Compare numerical distributions across multiple shards or geographic partitions using automated side-by-side grouped comparisons.
+
+```python
+from datalens import AnalysisConfig, run_analysis
+
+config = AnalysisConfig(
+    root="/datasets/user_events",
+    file_pattern="*.parquet",
+    columns={
+        "session_duration_sec": "quantile",
+        "conversion_value": "numeric",
+    },
+    partition_depth=1,                  # partitions by subfolder (e.g. region=EU, region=US)
+    sla={"session_duration_sec": 300.0},
+    plots=True,
+    plot_dir="./regional_comparison",
+    plot_style="datalens",
+)
+
+result = run_analysis(config)
+```
+
+</details>
+
+---
+
 ## Accumulators & Performance
 
 | Kind | Description | Outputs |
