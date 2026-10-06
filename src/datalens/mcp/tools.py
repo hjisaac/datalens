@@ -7,9 +7,9 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from ..core.config import AnalysisConfig
-from ..core.orchestrator import run_analysis
-from ..core.readers import read_batches, resolve_reader
+from datalens.core.config import AnalysisConfig
+from datalens.core.orchestrator import run_analysis
+from datalens.core.readers import read_batches, resolve_reader
 
 SUPPORTED_EXTENSIONS = (".parquet", ".csv", ".tsv", ".jsonl", ".ndjson")
 
@@ -281,7 +281,7 @@ def generate_dataset_plots(
         captions: If False, strips in-figure titles and callout boxes for academic paper inclusion.
         style: Visual style preset ('datalens', 'paper', 'dark').
     """
-    from ..viz import generate_plots
+    from datalens.viz import generate_plots
 
     profile = profile_dataset(path)
     stats = profile.get("statistics")
