@@ -29,6 +29,7 @@ _DEFAULTS: dict[str, Any] = {
     "readers": {},
     "quantiles": None,
     "quantile_compression": 100.0,
+    "sla": None,
     "plots": False,
     "plot_dir": "plots",
     "plot_format": "png",
@@ -56,6 +57,7 @@ class AnalysisConfig:
     readers: dict[str, str] = field(default_factory=dict)
     quantiles: list[float] | None = None
     quantile_compression: float = 100.0
+    sla: float | dict[str, float] | None = None
     plots: bool = False
     plot_dir: str | Path = "plots"
     plot_format: str = "png"
@@ -127,6 +129,14 @@ def build_config(data: Mapping[str, Any] | AnalysisConfig | DictConfig) -> Analy
         include_row_count=merged.get("include_row_count", True),
         top_categories=merged.get("top_categories"),
         readers=merged.get("readers", {}),
+        quantiles=merged.get("quantiles"),
+        quantile_compression=merged.get("quantile_compression", 100.0),
+        sla=merged.get("sla"),
+        plots=merged.get("plots", False),
+        plot_dir=merged.get("plot_dir", "plots"),
+        plot_format=merged.get("plot_format", "png"),
+        plot_captions=merged.get("plot_captions", True),
+        plot_style=merged.get("plot_style", "datalens"),
     )
 
 
@@ -160,6 +170,8 @@ def config_summary(config: AnalysisConfig | DictConfig) -> dict[str, Any]:
         "include_row_count": getattr(config, "include_row_count", True),
         "top_categories": getattr(config, "top_categories", None),
         "readers": dict(getattr(config, "readers", {})),
+        "quantiles": getattr(config, "quantiles", None),
+        "sla": getattr(config, "sla", None),
     }
 
 

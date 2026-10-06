@@ -19,6 +19,7 @@ def plot_quantile_distribution(
     column: str,
     stats: dict[str, Any],
     out_path: Path | str,
+    sla: float | None = None,
     captions: bool = True,
     style: str = "datalens",
     dpi: int = 300,
@@ -47,6 +48,7 @@ def plot_quantile_distribution(
     min_v = stats.get("min")
     max_v = stats.get("max")
     iqr = stats.get("iqr")
+    effective_sla = sla if sla is not None else stats.get("sla")
 
     with apply_style(style):
         fig, (ax_box, ax_cdf) = plt.subplots(1, 2, figsize=(11, 4.5))
@@ -76,6 +78,10 @@ def plot_quantile_distribution(
             if max_v is not None:
                 ax_box.scatter([max_v], [0.5], color=primary, marker="d", s=35, zorder=5, label=f"Max ({max_v:.3g})")
 
+            # SLA threshold line
+            if effective_sla is not None:
+                ax_box.axvline(effective_sla, color="#D9534F", linestyle="--", linewidth=1.8, label=f"SLA ({effective_sla:.3g})")
+
             ax_box.set_ylim(0.1, 0.9)
             ax_box.set_yticks([])
             ax_box.set_xlabel(f"{column} Values")
@@ -94,6 +100,8 @@ def plot_quantile_distribution(
             ax_cdf.plot(x_vals, y_vals, marker="o", color=secondary, linewidth=2, markersize=5, label="Empirical CDF")
             if p50 is not None:
                 ax_cdf.axhline(0.5, color=accent, linestyle=":", linewidth=1.2, label=f"P50 ({p50:.3g})")
+            if effective_sla is not None:
+                ax_cdf.axvline(effective_sla, color="#D9534F", linestyle="--", linewidth=1.8, label=f"SLA ({effective_sla:.3g})")
             ax_cdf.set_ylim(-0.02, 1.02)
             ax_cdf.set_xlabel(f"{column} Values")
             ax_cdf.set_ylabel("Cumulative Probability (Quantile)")
@@ -116,6 +124,16 @@ def plot_quantile_distribution(
             if min_v is not None and max_v is not None:
                 stat_text += f"\nMin: {min_v:.3g} | Max: {max_v:.3g}"
 
+            if effective_sla is not None:
+                sla_pct = stats.get("sla_exceeded_pct")
+                sla_cnt = stats.get("sla_exceeded_count")
+                if sla_pct is not None and sla_cnt is not None:
+                    stat_text += f"\nSLA: {effective_sla:.3g} | Exceeded: {sla_cnt:,} ({sla_pct:.1f}%)"
+                elif sla_pct is not None:
+                    stat_text += f"\nSLA: {effective_sla:.3g} | Exceeded: {sla_pct:.1f}%"
+                else:
+                    stat_text += f"\nSLA Limit: {effective_sla:.3g}"
+
             ax_box.text(
                 0.03, 0.95, stat_text,
                 transform=ax_box.transAxes,
@@ -124,6 +142,212 @@ def plot_quantile_distribution(
                 bbox=dict(boxstyle="round,pad=0.5", facecolor="#F8FAFC", edgecolor="#CBD5E1", alpha=0.9),
                 fontsize=8.5,
             )
+
+        fig.tight_layout()
+        fig.savefig(out_file, dpi=dpi, bbox_inches="tight")
+        plt.close(fig)
+
+    return out_file
+
+
+def plot_beeswarm_box(
+    column: str,
+    data: Any,
+    out_path: Path | str,
+    partition_col: str | None = None,
+    sla: float | None = None,
+    captions: bool = True,
+    style: str = "datalens",
+    dpi: int = 300,
+) -> Path:
+    """Generate a combined Box Plot + Jittered Beeswarm density strip chart.
+
+    Displays distribution quartiles, median, and mean alongside jittered raw sample points
+    to visualize local clustering, multimodality, and tail density. Supports an optional
+    SLA / threshold limit line.
+
+    Args:
+        column: Name of the numeric column being plotted.
+        data: Data source. Can be an AnalysisResult, a dictionary of partition samples,
+            a statistics dictionary with a 'sample' field, a sequence of floats, or a columnar dict.
+        out_path: Output file path (.png, .svg, .pdf).
+        partition_col: Optional column name to partition by when data is a tabular mapping.
+        sla: Optional SLA or limit threshold. Rendered as a red dashed horizontal reference line.
+        captions: If True, adds in-figure title, legend, and summary statistics callout box.
+        style: Visual theme ('datalens', 'paper', 'dark').
+        dpi: Output resolution.
+
+    Returns:
+        Path to the saved figure file.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    out_file = _ensure_dir(out_path)
+    palette = get_palette(style)
+
+    groups: dict[str, list[float]] = {}
+    effective_sla = sla
+
+    # Unpack data
+    if hasattr(data, "to_dict"):
+        data = data.to_dict()
+
+    if isinstance(data, dict) and "groups" in data and isinstance(data["groups"], dict):
+        for g_name, g_stats in data["groups"].items():
+            if isinstance(g_stats, dict) and column in g_stats:
+                col_info = g_stats[column]
+                if isinstance(col_info, dict):
+                    if effective_sla is None and "sla" in col_info:
+                        effective_sla = col_info["sla"]
+                    if "sample" in col_info and col_info["sample"]:
+                        groups[str(g_name)] = [float(x) for x in col_info["sample"]]
+    elif isinstance(data, dict) and "sample" in data:
+        if effective_sla is None and "sla" in data:
+            effective_sla = data["sla"]
+        groups["_all"] = [float(x) for x in data["sample"]]
+    elif isinstance(data, dict) and any(isinstance(v, (list, tuple, np.ndarray)) for v in data.values()):
+        if partition_col is not None and partition_col in data and column in data:
+            col_vals = data[column]
+            part_vals = data[partition_col]
+            for p, v in zip(part_vals, col_vals):
+                if v is not None and not (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
+                    groups.setdefault(str(p), []).append(float(v))
+        else:
+            for k, v in data.items():
+                if isinstance(v, (list, tuple, np.ndarray)):
+                    clean = [float(x) for x in v if x is not None and not (isinstance(x, float) and (math.isnan(x) or math.isinf(x)))]
+                    if clean:
+                        groups[str(k)] = clean
+    elif isinstance(data, (list, tuple, np.ndarray)):
+        clean = [float(x) for x in data if x is not None and not (isinstance(x, float) and (math.isnan(x) or math.isinf(x)))]
+        if clean:
+            groups[column] = clean
+
+    if not groups:
+        raise ValueError(f"No sample data found to generate beeswarm plot for column '{column}'.")
+
+    if len(groups) > 1 and "_all" in groups:
+        groups = {k: v for k, v in groups.items() if k != "_all"}
+
+    part_names = list(groups.keys())
+
+    with apply_style(style):
+        fig_width = max(8.0, len(part_names) * 2.2)
+        fig, ax = plt.subplots(figsize=(fig_width, 6))
+
+        all_points: list[float] = []
+
+        for idx, (p_name, vals) in enumerate(groups.items()):
+            vals_arr = np.asarray(vals, dtype=float)
+            vals_arr = vals_arr[np.isfinite(vals_arr)]
+            if len(vals_arr) == 0:
+                continue
+            all_points.extend(vals_arr.tolist())
+
+            c = palette[idx % len(palette)]
+
+            # Jittered strip overlay (beeswarm-style density)
+            rng = np.random.default_rng(42 + idx)
+            jitter = rng.uniform(-0.18, 0.18, size=len(vals_arr))
+            ax.scatter(
+                idx + jitter,
+                vals_arr,
+                color=c,
+                alpha=0.40,
+                s=24,
+                edgecolors="none",
+                zorder=3,
+            )
+
+            # Box plot metrics
+            q25, q50, q75 = np.percentile(vals_arr, [25, 50, 75])
+            mean_val = float(np.mean(vals_arr))
+            iqr = q75 - q25
+            low_w = max(float(np.min(vals_arr)), q25 - 1.5 * iqr)
+            high_w = min(float(np.max(vals_arr)), q75 + 1.5 * iqr)
+
+            # Box rectangle
+            rect = plt.Rectangle(
+                (idx - 0.28, q25),
+                0.56,
+                max(1e-6, q75 - q25),
+                facecolor=c,
+                alpha=0.35,
+                edgecolor=c,
+                linewidth=1.5,
+                zorder=2,
+            )
+            ax.add_patch(rect)
+
+            # Median line
+            ax.plot([idx - 0.28, idx + 0.28], [q50, q50], color="#D9534F", linewidth=2.2, zorder=4)
+
+            # Mean marker
+            ax.scatter(
+                [idx],
+                [mean_val],
+                marker="o",
+                facecolor="white",
+                edgecolor="#1E293B",
+                s=40,
+                linewidth=1.5,
+                zorder=5,
+                label="Mean" if idx == 0 else None,
+            )
+
+            # Whiskers
+            ax.plot([idx, idx], [low_w, q25], color=c, linewidth=1.3, zorder=2)
+            ax.plot([idx, idx], [q75, high_w], color=c, linewidth=1.3, zorder=2)
+            ax.plot([idx - 0.1, idx + 0.1], [low_w, low_w], color=c, linewidth=1.3, zorder=2)
+            ax.plot([idx - 0.1, idx + 0.1], [high_w, high_w], color=c, linewidth=1.3, zorder=2)
+
+        # SLA limit line
+        if effective_sla is not None:
+            ax.axhline(
+                effective_sla,
+                color="#D9534F",
+                linestyle="--",
+                linewidth=1.8,
+                label=f"SLA Limit ({effective_sla:g})",
+                zorder=6,
+            )
+
+        ax.set_xticks(range(len(part_names)))
+        clean_labels = [p if p != "_all" else column for p in part_names]
+        ax.set_xticklabels(
+            clean_labels,
+            rotation=30 if len(part_names) > 4 else 0,
+            ha="right" if len(part_names) > 4 else "center",
+        )
+        ax.set_ylabel(f"{column} Values")
+        ax.spines[["top", "right"]].set_visible(False)
+
+        if captions:
+            title_suffix = "by Partition" if len(part_names) > 1 else ""
+            ax.set_title(f"{column} — Box & Beeswarm Density {title_suffix}".strip(), fontsize=11, fontweight="bold")
+            ax.legend(loc="upper right", framealpha=0.9, fontsize=8)
+
+            if all_points:
+                stat_lines = [f"Sampled Points: {len(all_points):,}"]
+                if effective_sla is not None:
+                    exc_cnt = int(np.sum(np.asarray(all_points) > effective_sla))
+                    exc_pct = (exc_cnt / len(all_points) * 100) if len(all_points) else 0.0
+                    stat_lines.append(f"SLA Limit: {effective_sla:g}")
+                    stat_lines.append(f"Exceeded (> {effective_sla:g}): {exc_cnt:,} ({exc_pct:.1f}%)")
+
+                ax.text(
+                    0.03,
+                    0.95,
+                    "\n".join(stat_lines),
+                    transform=ax.transAxes,
+                    va="top",
+                    ha="left",
+                    bbox=dict(boxstyle="round,pad=0.4", facecolor="#F8FAFC", edgecolor="#CBD5E1", alpha=0.9),
+                    fontsize=8.5,
+                )
 
         fig.tight_layout()
         fig.savefig(out_file, dpi=dpi, bbox_inches="tight")
@@ -275,6 +499,7 @@ def plot_partition_comparison(
     groups: dict[str, dict[str, Any]],
     out_path: Path | str,
     kind: str = "quantile",
+    sla: float | None = None,
     captions: bool = True,
     style: str = "datalens",
     dpi: int = 300,
@@ -337,6 +562,12 @@ def plot_partition_comparison(
             if captions:
                 ax.set_title(f"{column} — Partition Means Comparison", fontsize=11, fontweight="bold")
 
+        # SLA horizontal reference line
+        if sla is not None:
+            ax.axhline(sla, color="#D9534F", linestyle="--", linewidth=1.8, label=f"SLA Limit ({sla:g})", zorder=6)
+            if captions:
+                ax.legend(loc="upper right", framealpha=0.9, fontsize=8)
+
         ax.spines[["top", "right"]].set_visible(False)
         fig.tight_layout()
         fig.savefig(out_file, dpi=dpi, bbox_inches="tight")
@@ -349,6 +580,7 @@ def generate_plots(
     analysis_result: Any,
     out_dir: Path | str = "plots",
     format: str = "png",
+    sla: float | dict[str, float] | None = None,
     captions: bool = True,
     style: str = "datalens",
     dpi: int = 300,
@@ -372,12 +604,27 @@ def generate_plots(
         if not isinstance(col_data, dict):
             continue
 
+        col_sla: float | None = None
+        if sla is not None:
+            if isinstance(sla, dict):
+                col_sla = sla.get(col_name)
+            elif isinstance(sla, (int, float)):
+                col_sla = float(sla)
+        elif "sla" in col_data:
+            col_sla = col_data["sla"]
+
         # Check accumulator kind
         if "p50" in col_data:
             # Quantile distribution plot
             fname = f"{col_name}_quantile.{format}"
-            path = plot_quantile_distribution(col_name, col_data, out_directory / fname, captions=captions, style=style, dpi=dpi)
+            path = plot_quantile_distribution(col_name, col_data, out_directory / fname, sla=col_sla, captions=captions, style=style, dpi=dpi)
             created[f"{col_name}_quantile"] = path
+
+            # If sample points are available, generate beeswarm + box plot
+            if "sample" in col_data and col_data["sample"]:
+                b_fname = f"{col_name}_beeswarm.{format}"
+                b_path = plot_beeswarm_box(col_name, analysis_result, out_directory / b_fname, sla=col_sla, captions=captions, style=style, dpi=dpi)
+                created[f"{col_name}_beeswarm"] = b_path
 
         elif "counts" in col_data:
             # Categorical frequency plot
@@ -398,8 +645,27 @@ def generate_plots(
         for col_name, col_data in first_group.items():
             if isinstance(col_data, dict) and ("p50" in col_data or "mean" in col_data):
                 kind = "quantile" if "p50" in col_data else "numeric"
+                col_sla = None
+                if sla is not None:
+                    if isinstance(sla, dict):
+                        col_sla = sla.get(col_name)
+                    elif isinstance(sla, (int, float)):
+                        col_sla = float(sla)
+                elif "sla" in col_data:
+                    col_sla = col_data["sla"]
+
                 fname = f"{col_name}_partition_comparison.{format}"
-                path = plot_partition_comparison(col_name, groups, out_directory / fname, kind=kind, captions=captions, style=style, dpi=dpi)
+                path = plot_partition_comparison(col_name, groups, out_directory / fname, kind=kind, sla=col_sla, captions=captions, style=style, dpi=dpi)
                 created[f"{col_name}_partition_comparison"] = path
+
+                # Also generate partition beeswarm if samples exist across partitions
+                has_partition_samples = any(
+                    isinstance(groups.get(p, {}).get(col_name), dict) and groups[p][col_name].get("sample")
+                    for p in non_all_keys
+                )
+                if has_partition_samples:
+                    b_fname = f"{col_name}_partition_beeswarm.{format}"
+                    b_path = plot_beeswarm_box(col_name, analysis_result, out_directory / b_fname, sla=col_sla, captions=captions, style=style, dpi=dpi)
+                    created[f"{col_name}_partition_beeswarm"] = b_path
 
     return created

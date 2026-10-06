@@ -140,15 +140,17 @@ class AnalysisResult:
         self,
         out_dir: str | Path = "plots",
         format: str = "png",
+        sla: float | dict[str, float] | None = None,
         captions: bool = True,
         style: str = "datalens",
         dpi: int = 300,
     ) -> dict[str, Path]:
-        """Generate statistical plots (quantile, categorical, numeric, partition comparisons) for the results.
+        """Generate statistical plots (quantile, categorical, numeric, partition comparisons, beeswarm) for the results.
 
         Args:
             out_dir: Directory where figures will be saved (default: 'plots').
             format: Output file format ('png', 'svg', 'pdf').
+            sla: Optional SLA / threshold limit line to overlay on quantile, beeswarm, and comparison plots.
             captions: Whether to include in-figure titles and statistical callout boxes. Set to False for academic papers.
             style: Visual style preset ('datalens', 'paper', 'dark') or custom style.
             dpi: Figure resolution in dots per inch (default: 300).
@@ -162,6 +164,41 @@ class AnalysisResult:
             self,
             out_dir=out_dir,
             format=format,
+            sla=sla,
+            captions=captions,
+            style=style,
+            dpi=dpi,
+        )
+
+    def plot_beeswarm(
+        self,
+        column: str,
+        out_path: str | Path,
+        sla: float | None = None,
+        captions: bool = True,
+        style: str = "datalens",
+        dpi: int = 300,
+    ) -> Path:
+        """Generate a combined Box Plot + Jittered Beeswarm density strip chart for this result.
+
+        Args:
+            column: Name of the numeric column being plotted.
+            out_path: Path where the figure image will be saved.
+            sla: Optional SLA or limit threshold reference line.
+            captions: If True, adds in-figure title, legend, and summary statistics callout box.
+            style: Visual theme preset ('datalens', 'paper', 'dark').
+            dpi: Figure resolution (default: 300).
+
+        Returns:
+            Path to the saved figure file.
+        """
+        from ..viz import plot_beeswarm_box
+
+        return plot_beeswarm_box(
+            column=column,
+            data=self,
+            out_path=out_path,
+            sla=sla,
             captions=captions,
             style=style,
             dpi=dpi,

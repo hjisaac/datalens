@@ -247,3 +247,66 @@ def test_count_accumulator_comprehensive() -> None:
     other = CountAccumulator(count=25)
     acc.merge(other)
     assert acc.result()["count"] == 40
+
+
+def test_quantile_accumulator_cdf() -> None:
+    acc = QuantileAccumulator()
+    assert acc.cdf(50.0) is None
+
+    # Test uniform distribution [0, 1000]
+    np.random.seed(42)
+    data = np.random.uniform(0.0, 1000.0, size=10_000)
+    acc.update(data)
+
+    assert acc.cdf(-10.0) == 0.0
+    assert acc.cdf(1100.0) == 1.0
+
+    # CDF at median ~ 0.50
+    p50 = acc.quantile(0.5)
+    assert p50 is not None
+    assert acc.cdf(p50) == pytest.approx(0.50, abs=0.02)
+
+    # CDF at 250 ~ 0.25, at 750 ~ 0.75
+    assert acc.cdf(250.0) == pytest.approx(0.25, abs=0.03)
+    assert acc.cdf(750.0) == pytest.approx(0.75, abs=0.03)
+
+
+def test_quantile_accumulator_reservoir_sampling() -> None:
+    acc = QuantileAccumulator(sample_capacity=100)
+    data = np.arange(1000, dtype=np.float64)
+    acc.update(data)
+
+    assert len(acc.sample) == 100
+    assert all(0.0 <= x < 1000.0 for x in acc.sample)
+
+    # Merge reservoir samples
+    other = QuantileAccumulator(sample_capacity=100)
+    other.update(np.arange(1000, 2000, dtype=np.float64))
+    acc.merge(other)
+
+    assert len(acc.sample) <= 100
+    res = acc.result()
+    assert "sample" in res
+    assert len(res["sample"]) == len(acc.sample)
+
+
+def test_quantile_accumulator_sla_metrics() -> None:
+    acc = QuantileAccumulator()
+    # 800 items <= 100, 200 items > 100
+    part1 = np.random.uniform(0.0, 100.0, size=800)
+    part2 = np.random.uniform(101.0, 200.0, size=200)
+    data = np.concatenate([part1, part2])
+    acc.update(data)
+
+    res = acc.result(sla=100.0)
+    assert "sla" in res
+    assert res["sla"] == 100.0
+    assert "sla_exceeded_pct" in res
+    assert "sla_exceeded_count" in res
+    assert "sla_compliant_pct" in res
+
+    # Exceeded should be ~20%
+    assert res["sla_exceeded_pct"] == pytest.approx(20.0, abs=2.5)
+    assert res["sla_compliant_pct"] == pytest.approx(80.0, abs=2.5)
+    assert res["sla_exceeded_count"] == pytest.approx(200, abs=25)
+
