@@ -107,31 +107,6 @@ sla:
 ```
 </details>
 
-<details>
-<summary><b>Click to preview sample figure gallery (Quantile Fan, Beeswarm + Box, Partition, Pareto)</b></summary>
-
-<p align="center">
-  <b>Dual-Panel Quantile Distribution (Fan + Box & Empirical CDF with SLA Cutoff)</b><br>
-  <img src="docs/images/quantile_distribution_sla.png" alt="Dual-Panel Quantile Distribution with SLA Overlay" width="95%" />
-</p>
-
-<p align="center">
-  <b>Beeswarm + Box Plot (Raw Sample Jitter Density with SLA Limit)</b><br>
-  <img src="docs/images/beeswarm_box_sla.png" alt="Beeswarm Box Plot with SLA Limit" width="95%" />
-</p>
-
-<p align="center">
-  <b>Multi-Partition Comparison across Splits</b><br>
-  <img src="docs/images/partition_comparison_sla.png" alt="Partition Comparison Across Shards" width="85%" />
-</p>
-
-<p align="center">
-  <b>Categorical Frequency Pareto Distribution</b><br>
-  <img src="docs/images/categorical_frequency.png" alt="Categorical Frequency Pareto Distribution" width="85%" />
-</p>
-
-</details>
-
 ---
 
 ## Real-World Examples
