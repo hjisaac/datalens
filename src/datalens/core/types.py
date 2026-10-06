@@ -158,7 +158,7 @@ class AnalysisResult:
         Returns:
             Dictionary mapping plot names to saved file Paths.
         """
-        from ..viz import generate_plots
+        from datalens.viz import generate_plots
 
         return generate_plots(
             self,
@@ -192,7 +192,7 @@ class AnalysisResult:
         Returns:
             Path to the saved figure file.
         """
-        from ..viz import plot_beeswarm_box
+        from datalens.viz import plot_beeswarm_box
 
         return plot_beeswarm_box(
             column=column,

@@ -25,6 +25,8 @@ stats.json
 plots/
 *.png
 *.svg
+!docs/images/*.png
+!docs/images/*.svg
 
 
 # IDE and Editor files

@@ -6,7 +6,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from ..core.config import resolve_column_sla
+from datalens.core import resolve_column_sla
 from .styles import apply_style, get_palette
 
 CALLOUT_BBOX = dict(boxstyle="round,pad=0.45", facecolor="#F8FAFC", edgecolor="#CBD5E1", alpha=0.92)

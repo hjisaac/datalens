@@ -1,211 +1,327 @@
 # DataLens
 
-**Fast, streaming map-reduce statistics for tabular datasets.**
+**Fast, streaming map-reduce statistics and publication-grade visualizations for tabular datasets.**
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-DataLens is a lightweight, high-performance library for computing corpus-level statistics across tabular data (Parquet, CSV, TSV, JSONL, and in-memory structures). Built on a streaming map-reduce architecture, it processes massive datasets in bounded memory using numerically stable online algorithms.
+DataLens is a lightweight library for computing corpus-level statistics and generating publication figures across tabular data (Parquet, CSV, TSV, JSONL, and in-memory structures) in strictly bounded memory using numerically stable online algorithms.
 
 ---
 
 ## Features
 
-- **Streaming & Numerically Stable**: Uses Welford's algorithm for $O(1)$-memory online mean and variance calculation without catastrophic precision loss.
-- **Multimodal Formats**: Native support for **Parquet**, **CSV**, **TSV**, **JSONL / NDJSON**, and direct **in-memory data** (lists of dicts, columnar arrays, PyArrow Tables, Pandas/Polars DataFrames).
-- **Parallel Multi-Processing**: Transparently scales across all CPU cores for disk-bound corpora, while running zero-overhead in-process for in-memory data.
-- **Unified Architecture**: A single, elegant pipeline (`Task -> Map -> Shuffle -> Reduce`) with zero branching between file and in-memory workflows.
-- **First-Class Python & CLI Interfaces**: Strongly typed Python dataclasses (`AnalysisConfig`, `DataTask`, `FileTask`) alongside a modern **Typer** CLI with Rich output formatting.
-- **Featherweight Base**: Base installation requires only pure Python and NumPy. Heavy dependencies like `pyarrow` are completely optional.
-
----
-
-## Supported Metric Accumulators
-
-| Metric Kind | Description | Outputs |
-| :--- | :--- | :--- |
-| `numeric` | Streaming summary via Welford's algorithm | `count`, `mean`, `std`, `min`, `max` |
-| `quantile` | Streaming percentiles via Ted Dunning's T-Digest | `count`, `min`, `max`, `p01`–`p99`, `iqr` |
-| `categorical` | Exact frequency counter with optional top-N truncation | `unique`, `counts: {value: frequency}` |
-| `cardinality` | Exact distinct-value tracking | `unique` |
-| `count` | Row / event counter | `count` |
-
----
-
-## Performance & Benchmarks
-
-<details>
-<summary><b>Click to expand benchmark results (up to 24M+ rows/sec)</b></summary>
-
-Empirical measurements on a standard CPU core (1,000,000 rows, batch size 50,000):
-
-| Component / Workload | Throughput | Latency (1M rows) | Memory Complexity |
-| :--- | :--- | :--- | :--- |
-| **`NumericAccumulator` (Welford)** | **~24.7M rows/s** | ~40.5 ms | $O(1)$ constant |
-| **Full Pipeline (Columnar Map-Reduce)** | **~2.84M rows/s** | ~352 ms | $O(1)$ batch-bounded |
-| **`QuantileAccumulator` (T-Digest)** | **~400K rows/s** | ~2.5 s | $O(C)$ centroid-bounded |
-| **Multi-Column (4 mixed metrics, 100k rows)** | **~205K rows/s** | ~487 ms | $O(1)$ bounded |
-
-> **Streaming Guarantee**: Because all statistics operate via online accumulators, memory usage remains strictly bounded regardless of whether the corpus has 10,000 or 100,000,000 rows.
-
-</details>
+- **Streaming & $O(1)$ Memory**: Welford's algorithm for online mean/variance and T-Digest for percentiles without loading full datasets.
+- **Multimodal Formats**: Native support for **Parquet**, **CSV**, **TSV**, **JSONL**, and **in-memory data** (dicts, arrays, Arrow, DataFrames).
+- **Parallel Multi-Processing**: Transparently scales across CPU cores for disk corpora with zero branching between file and in-memory workflows.
+- **Publication Visualizations (`datalens.viz`)**: High-resolution figures (dual-panel quantile fans, beeswarm + box plots, partition comparisons) with automated SLA threshold overlays.
+- **Featherweight**: Core engine depends only on pure Python and NumPy. `pyarrow`, `matplotlib`, and `mcp` are optional extras.
 
 ---
 
 ## Installation
 
-### From GitHub
 ```bash
+# Core engine:
 pip install git+https://github.com/hjisaac/datalens.git
 
-# With optional Parquet support:
-pip install "datalens[parquet] @ git+https://github.com/hjisaac/datalens.git"
-
-# With Model Context Protocol (MCP) server support:
-pip install "datalens[mcp] @ git+https://github.com/hjisaac/datalens.git"
-
-# With all extras (Parquet + MCP):
-pip install "datalens[all] @ git+https://github.com/hjisaac/datalens.git"
-```
-
-### Local Development Installation
-```bash
-# Clone the repository
-git clone git@github.com:hjisaac/datalens.git
-cd datalens
-
-# Install in editable mode
-pip install -e ".[dev]"
+# With optional extras:
+pip install "datalens[parquet,viz,mcp] @ git+https://github.com/hjisaac/datalens.git"
 ```
 
 ---
 
 ## Quickstart
 
-### 1. Python API
+### Python API
 
-#### In-Memory Data (Single Process)
-```python
-from datalens import AnalysisConfig, run_analysis
-
-# Define metrics to compute
-config = AnalysisConfig(
-    columns={
-        "latency_ms": "numeric",
-        "status_code": "categorical",
-        "user_id": "cardinality",
-    }
-)
-
-# Any in-memory records (list of dicts, columnar dict, or PyArrow Table)
-records = [
-    {"latency_ms": 12.5, "status_code": 200, "user_id": "u1"},
-    {"latency_ms": 45.0, "status_code": 500, "user_id": "u2"},
-    {"latency_ms": 18.2, "status_code": 200, "user_id": "u1"},
-]
-
-result = run_analysis(config, source=records)
-
-# Save or inspect results
-result.to_json("stats.json")
-print(result.to_dict())
-```
-
-#### Scanning a Directory Dataset (Parallel Map-Reduce)
 ```python
 from datalens import AnalysisConfig, run_analysis
 
 config = AnalysisConfig(
     root="/data/events",
-    file_pattern="*.parquet",      # or "*.csv", "*.jsonl"
+    file_pattern="*.parquet",
     columns={
-        "price": "numeric",
-        "category": "categorical",
+        "latency_ms": "quantile",   # percentiles + sample reservoir for plotting
+        "price": "numeric",         # streaming mean, std, min, max
+        "status": "categorical",    # frequency counters
     },
-    partition_depth=1,             # use the first subfolder as partition key
-    workers=8,                     # parallel worker processes (None = all CPUs)
-    top_categories=10,             # keep top 10 categories
+    plots=True,                     # auto-generate publication figures
+    plot_dir="./plots",
+    sla={"latency_ms": 100.0},      # SLA threshold line & violation rate
 )
 
 result = run_analysis(config)
-result.to_json("corpus_stats.json")
+result.to_json("stats.json")
+
+# Or render plots on demand:
+result.plot(output_dir="./plots", style="paper")
+result.plot_beeswarm("latency_ms", output_path="latency.png", sla=100.0)
 ```
 
-#### Using Streaming Accumulators Directly
-```python
-import numpy as np
-from datalens import NumericAccumulator, CategoricalAccumulator
-
-# Welford online numeric summary:
-acc = NumericAccumulator()
-acc.update(np.array([10.0, 20.0, 30.0]))
-acc.update(np.array([40.0, 50.0]))
-print(acc.result())
-# {'count': 5, 'mean': 30.0, 'std': 14.14..., 'min': 10.0, 'max': 50.0}
-```
-
----
-
-### 2. Command Line Interface (CLI)
-
-DataLens provides a built-in Typer command:
+### CLI
 
 ```bash
-# Run analysis and print formatted JSON to stdout:
-datalens config.yaml
+# Run analysis:
+datalens config.yaml -o stats.json
 
-# Save to output file with custom worker processes:
-datalens config.yaml --output stats.json --workers 8
-
-# Silent mode (suppress logs):
-datalens config.yaml -o stats.json -q
+# Run with publication plots and SLA threshold:
+datalens config.yaml --plots --sla 100.0 --plot-style paper
 ```
 
 ---
 
-## Configuration (`config.yaml`)
+## Visualizations & SLA Overlays
+
+DataLens generates publication-ready figures directly to PNG, SVG, or PDF:
+
+- **Dual-Panel Quantile Distribution**: Percentile fan chart (IQR & P05–P95 shading) with Box & Whisker summary and Empirical CDF.
+- **Beeswarm + Box Plot**: Box plot overlaid with jittered raw sample points for true distribution density without binning artifacts.
+- **SLA Threshold Overlays**: Reference threshold lines with callout badges and truncation violation metrics (`sla_exceeded_pct`).
+- **Visual Styles**: `datalens` (corporate modern), `paper` (academic print/LaTeX), and `dark`. Use `captions=False` to strip titles for paper captions.
+
+<details>
+<summary><b>Click to expand full configuration options (<code>config.yaml</code>)</b></summary>
 
 ```yaml
-# Dataset root directory
 root: /path/to/dataset
-
-# Physical column name → accumulator kind
+file_pattern: "*.parquet"
 columns:
-  latency_ms: numeric
+  latency_ms: quantile
+  price: numeric
   status_code: categorical
   user_id: cardinality
-
-# File pattern glob
-file_pattern: "*.parquet"
-
-# Number of worker processes (null = all CPUs; 1 = serial)
-workers: null
-
-# Rows read per batch during mapping
+workers: null             # null = all CPUs, 1 = serial
 batch_size: 65536
-
-# Truncate partition key depth from directory tree
 partition_depth: null
-
-# Keep only top-N categories (null = all)
 top_categories: 10
+
+# Plotting & SLA
+plots: true
+plot_dir: "./plots"
+plot_style: "datalens"    # "datalens" | "paper" | "dark"
+plot_format: "png"        # "png" | "svg" | "pdf"
+plot_captions: true
+sla:
+  latency_ms: 100.0
 ```
+</details>
+
+---
+
+## Real-World Examples
+
+<details>
+<summary><b>Click to expand production examples (LLM Token Truncation, Microservices SLA, Multi-Partition Shards)</b></summary>
+
+### 1. LLM Pre-training & Fine-Tuning: Context Window SLA & Truncation Analytics
+In NLP dataset preparation, setting a sequence length cutoff (e.g. 512, 1024, or 4096 tokens) requires knowing the exact distribution tail and truncation impact across splits.
+
+```python
+from datalens import AnalysisConfig, run_analysis
+
+# Dataset Layout & Sample Records:
+# /data/nlp/tokenized_corpus/
+#   ├── train/shard_001.parquet
+#   ├── val/shard_001.parquet
+#   └── test/shard_001.parquet
+#
+# Columns: doc_id (str), language (str), token_count (int), text (str)
+# Sample rows:
+#   {"doc_id": "c4_48291", "language": "en", "token_count": 384, "text": "The transformer model..."}
+#   {"doc_id": "c4_48292", "language": "fr", "token_count": 612, "text": "Les modèles d'attention..."}
+
+config = AnalysisConfig(
+    root="/data/nlp/tokenized_corpus",
+    file_pattern="*.parquet",
+    columns={
+        "token_count": "quantile",      # T-Digest percentiles + sample reservoir
+        "language": "categorical",
+        "doc_id": "cardinality",
+    },
+    partition_depth=1,                  # partitions: train, val, test
+    sla={"token_count": 512.0},         # Context window cutoff
+    plots=True,
+    plot_dir="./figures/token_dist",
+    plot_style="paper",                 # High-contrast, print-ready for academic papers
+    plot_captions=False,                # Strips in-figure titles for LaTeX figure captions
+)
+
+result = run_analysis(config)
+
+# Generate publication-grade beeswarm + box plot overlay for the paper:
+result.plot_beeswarm(
+    column="token_count",
+    output_path="./figures/token_beeswarm.pdf",
+    sla=512.0,
+    style="paper",
+    captions=False,
+)
+
+# Inspect exact truncation statistics:
+metrics = result.to_dict()["global"]["token_count"]
+print(f"P95: {metrics['p95']:.1f} tokens | P99: {metrics['p99']:.1f} tokens")
+# Output: P95: 468.0 tokens | P99: 582.5 tokens
+
+print(f"Truncated Documents: {metrics['sla_exceeded_count']:,} ({metrics['sla_exceeded_pct']:.2f}%)")
+# Output: Truncated Documents: 14,200 (1.42%)
+```
+
+#### Generated Figures:
+<p align="center">
+  <img src="docs/images/quantile_distribution_sla.png" alt="Dual-Panel Quantile Distribution with SLA Overlay" width="95%" />
+  <img src="docs/images/beeswarm_box_sla.png" alt="Beeswarm Box Plot with SLA Limit" width="95%" />
+</p>
+
+---
+
+### 2. Microservices API Observability: Streaming Latency SLA Diagnostics
+Process millions of streaming JSONL / NDJSON access logs without memory spikes, tracking p95/p99 tail latency and HTTP status code distributions across worker processes.
+
+```python
+from datalens import AnalysisConfig, run_analysis
+
+# Dataset Format: /var/log/api_gateway/access_2026-10-06.jsonl
+# Sample lines (NDJSON):
+#   {"client_ip": "192.168.1.10", "status_code": 200, "latency_ms": 42.5, "payload_bytes": 1024}
+#   {"client_ip": "10.0.4.88",    "status_code": 504, "latency_ms": 245.8, "payload_bytes": 512}
+
+config = AnalysisConfig(
+    root="/var/log/api_gateway",
+    file_pattern="access_*.jsonl",
+    columns={
+        "latency_ms": "quantile",
+        "status_code": "categorical",
+        "client_ip": "cardinality",
+        "payload_bytes": "numeric",
+    },
+    workers=16,                         # Multi-core streaming map-reduce
+    sla={"latency_ms": 200.0},          # 200ms latency SLA threshold
+    top_categories=10,
+    plots=True,
+    plot_dir="./dashboard_plots",
+    plot_style="dark",                  # Sleek dark theme for dashboard previews
+)
+
+result = run_analysis(config)
+result.to_json("api_sla_report.json")
+
+# Inspect distribution outputs:
+print(result.to_dict()["global"]["status_code"])
+# Output: {'unique': 5, 'counts': {'200': 954200, '404': 24800, '500': 12000, '502': 6200, '504': 2800}}
+
+print(result.to_dict()["global"]["latency_ms"])
+# Output: {
+#   'count': 1000000, 'min': 1.2, 'max': 892.4, 'p50': 28.4, 'p95': 112.0, 'p99': 188.5,
+#   'sla_exceeded_count': 7850, 'sla_exceeded_pct': 0.785
+# }
+```
+
+#### Generated Figure:
+<p align="center">
+  <img src="docs/images/categorical_frequency.png" alt="Categorical Frequency Pareto Distribution" width="85%" />
+</p>
+
+---
+
+### 3. Multi-Partition Comparative Analysis across Shards
+Compare numerical distributions across multiple shards or geographic partitions using automated side-by-side grouped comparisons.
+
+```python
+from datalens import AnalysisConfig, run_analysis
+
+# Dataset Layout:
+# /datasets/user_events/
+#   ├── region=us-east/events_01.parquet
+#   └── region=eu-west/events_01.parquet
+#
+# Columns: session_duration_sec (float), conversion_value (float), user_id (string)
+# Sample row: {"session_duration_sec": 145.2, "conversion_value": 49.99, "user_id": "u_9482"}
+
+config = AnalysisConfig(
+    root="/datasets/user_events",
+    file_pattern="*.parquet",
+    columns={
+        "session_duration_sec": "quantile",
+        "conversion_value": "numeric",
+    },
+    partition_depth=1,                  # partitions by subfolder (e.g. region=EU, region=US)
+    sla={"session_duration_sec": 300.0},
+    plots=True,
+    plot_dir="./regional_comparison",
+    plot_style="datalens",
+)
+
+result = run_analysis(config)
+
+# Compare partition percentiles & SLA compliance:
+for partition, stats in result.to_dict()["partitions"].items():
+    p95 = stats["session_duration_sec"]["p95"]
+    viol_pct = stats["session_duration_sec"]["sla_exceeded_pct"]
+    print(f"[{partition}] P95 duration: {p95:.1f}s | >300s SLA: {viol_pct:.2f}%")
+# Output:
+# [region=us-east] P95 duration: 240.5s | >300s SLA: 1.15%
+# [region=eu-west] P95 duration: 318.2s | >300s SLA: 6.40%
+```
+
+#### Generated Figure:
+<p align="center">
+  <img src="docs/images/partition_comparison_sla.png" alt="Partition Comparison Across Shards" width="85%" />
+</p>
+
+</details>
+
+---
+
+## Accumulators & Performance
+
+| Kind | Description | Outputs |
+| :--- | :--- | :--- |
+| `numeric` | Streaming summary via Welford's algorithm | `count`, `mean`, `std`, `min`, `max` |
+| `quantile` | Streaming percentiles (T-Digest + reservoir sampling) | `count`, `min`, `max`, `p01`–`p99`, `iqr`, `samples` |
+| `categorical` | Exact frequency counter with optional top-N truncation | `unique`, `counts: {value: frequency}` |
+| `cardinality` | Exact distinct-value tracking | `unique` |
+| `count` | Row / event counter | `count` |
+
+<details>
+<summary><b>Click to view empirical throughput benchmarks (up to ~20M rows/sec)</b></summary>
+
+### Test Environment & Hardware Context
+- **CPU**: Intel Core i7-7820HQ (4 Cores, 8 Threads @ up to 3.90 GHz)
+- **Memory**: 16 GB DDR4 (15,566 MiB)
+- **OS / Kernel**: Linux 6.9.3 x86_64
+- **Runtime**: Python 3.11.11 with NumPy C-accelerated backend
+
+### Single-Core Empirical Measurements (1,000,000 Rows, Batch Size 50,000)
+
+| Component / Workload | Throughput | Latency (1M rows) | Memory Complexity |
+| :--- | :--- | :--- | :--- |
+| **`NumericAccumulator` (Welford)** | **~19.5M rows/s** | ~51.3 ms | $O(1)$ constant |
+| **Full Pipeline (Columnar Map-Reduce)** | **~3.43M rows/s** | ~291.7 ms | $O(1)$ batch-bounded |
+| **`QuantileAccumulator` (T-Digest + Reservoir)** | **~487K rows/s** | ~2.05 s | $O(C)$ centroid-bounded |
+| **Multi-Column (4 mixed metrics, 100k rows)** | **~296K rows/s** | ~337.5 ms | $O(1)$ bounded |
+
+### Multi-Core Parallel Scaling (4 Worker Processes)
+- **CSV Partition Map-Reduce**: Scaled from 1.74M rows/s (single worker) to **3.31M rows/s** (4 workers) — a **1.91x throughput speedup** over disk-bound tabular batches.
+
+> **Streaming Guarantee**: Because all accumulators operate via online streaming algorithms, memory usage remains strictly bounded regardless of whether the dataset contains 10,000 or 100,000,000 rows.
+
+</details>
 
 ---
 
 ## Model Context Protocol (MCP) Server
 
-DataLens includes a native **Model Context Protocol (MCP)** server that equips AI assistants (Claude Desktop, Cursor, Antigravity, Gemini) to inspect and profile datasets directly.
+DataLens includes an MCP server for AI assistants (Claude Desktop, Cursor, Gemini):
 
-### Starting the Server
 ```bash
 datalens mcp
-# or via standalone binary
-datalens-mcp
 ```
 
-### Adding to Claude Desktop / Cursor
-Add the following to your MCP client configuration (e.g. `claude_desktop_config.json`):
+<details>
+<summary><b>Click to expand MCP tools & client configuration</b></summary>
+
+### Claude Desktop / Cursor Configuration (`claude_desktop_config.json`)
 ```json
 {
   "mcpServers": {
@@ -217,25 +333,19 @@ Add the following to your MCP client configuration (e.g. `claude_desktop_config.
 }
 ```
 
-### Available MCP Tools & Capabilities
-* **`inspect_dataset`**: Inspects files or directories without reading them into memory. Infers schema, data types, null counts, and recommends optimal accumulator mappings.
-* **`compute_statistics`**: Runs distributed Map-Reduce statistics across tabular datasets with custom metric specifications.
-* **`profile_dataset`**: One-click profiling: automatically discovers schemas, maps columns, and returns a complete statistical report.
-* **Resource `datalens://workspace/datasets`**: Lists dataset files in the current workspace.
-* **Prompt `profile_and_analyze`**: Guides LLM agents through structured distribution analysis, outlier detection, and data reporting.
+### Available Tools
+- `inspect_dataset`: Infers schema and null counts without reading into memory.
+- `compute_statistics`: Runs distributed map-reduce statistics.
+- `profile_dataset`: Auto-discovers schemas and returns full statistical profiles.
+- `generate_dataset_plots`: Produces publication-grade charts directly from AI prompts.
+</details>
 
 ---
 
-## Testing
-
-Run the test suite using `pytest`:
+## Testing & License
 
 ```bash
 pytest
 ```
-
----
-
-## License
 
 MIT License. See [LICENSE](LICENSE) for details.
