@@ -120,7 +120,17 @@ In NLP dataset preparation, setting a sequence length cutoff (e.g. 512, 1024, or
 ```python
 from datalens import AnalysisConfig, run_analysis
 
-# Analyze token lengths across train/val/test parquet shards
+# Dataset Layout & Sample Records:
+# /data/nlp/tokenized_corpus/
+#   ├── train/shard_001.parquet
+#   ├── val/shard_001.parquet
+#   └── test/shard_001.parquet
+#
+# Columns: doc_id (str), language (str), token_count (int), text (str)
+# Sample rows:
+#   {"doc_id": "c4_48291", "language": "en", "token_count": 384, "text": "The transformer model..."}
+#   {"doc_id": "c4_48292", "language": "fr", "token_count": 612, "text": "Les modèles d'attention..."}
+
 config = AnalysisConfig(
     root="/data/nlp/tokenized_corpus",
     file_pattern="*.parquet",
@@ -151,7 +161,10 @@ result.plot_beeswarm(
 # Inspect exact truncation statistics:
 metrics = result.to_dict()["global"]["token_count"]
 print(f"P95: {metrics['p95']:.1f} tokens | P99: {metrics['p99']:.1f} tokens")
+# Output: P95: 468.0 tokens | P99: 582.5 tokens
+
 print(f"Truncated Documents: {metrics['sla_exceeded_count']:,} ({metrics['sla_exceeded_pct']:.2f}%)")
+# Output: Truncated Documents: 14,200 (1.42%)
 ```
 
 ---
@@ -161,6 +174,11 @@ Process millions of streaming JSONL / NDJSON access logs without memory spikes, 
 
 ```python
 from datalens import AnalysisConfig, run_analysis
+
+# Dataset Format: /var/log/api_gateway/access_2026-10-06.jsonl
+# Sample lines (NDJSON):
+#   {"client_ip": "192.168.1.10", "status_code": 200, "latency_ms": 42.5, "payload_bytes": 1024}
+#   {"client_ip": "10.0.4.88",    "status_code": 504, "latency_ms": 245.8, "payload_bytes": 512}
 
 config = AnalysisConfig(
     root="/var/log/api_gateway",
@@ -181,6 +199,16 @@ config = AnalysisConfig(
 
 result = run_analysis(config)
 result.to_json("api_sla_report.json")
+
+# Inspect distribution outputs:
+print(result.to_dict()["global"]["status_code"])
+# Output: {'unique': 5, 'counts': {'200': 954200, '404': 24800, '500': 12000, '502': 6200, '504': 2800}}
+
+print(result.to_dict()["global"]["latency_ms"])
+# Output: {
+#   'count': 1000000, 'min': 1.2, 'max': 892.4, 'p50': 28.4, 'p95': 112.0, 'p99': 188.5,
+#   'sla_exceeded_count': 7850, 'sla_exceeded_pct': 0.785
+# }
 ```
 
 ---
@@ -190,6 +218,14 @@ Compare numerical distributions across multiple shards or geographic partitions 
 
 ```python
 from datalens import AnalysisConfig, run_analysis
+
+# Dataset Layout:
+# /datasets/user_events/
+#   ├── region=us-east/events_01.parquet
+#   └── region=eu-west/events_01.parquet
+#
+# Columns: session_duration_sec (float), conversion_value (float), user_id (string)
+# Sample row: {"session_duration_sec": 145.2, "conversion_value": 49.99, "user_id": "u_9482"}
 
 config = AnalysisConfig(
     root="/datasets/user_events",
@@ -206,6 +242,15 @@ config = AnalysisConfig(
 )
 
 result = run_analysis(config)
+
+# Compare partition percentiles & SLA compliance:
+for partition, stats in result.to_dict()["partitions"].items():
+    p95 = stats["session_duration_sec"]["p95"]
+    viol_pct = stats["session_duration_sec"]["sla_exceeded_pct"]
+    print(f"[{partition}] P95 duration: {p95:.1f}s | >300s SLA: {viol_pct:.2f}%")
+# Output:
+# [region=us-east] P95 duration: 240.5s | >300s SLA: 1.15%
+# [region=eu-west] P95 duration: 318.2s | >300s SLA: 6.40%
 ```
 
 </details>
