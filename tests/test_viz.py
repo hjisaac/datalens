@@ -233,7 +233,17 @@ def test_plot_beeswarm_box(tmp_path: Path) -> None:
     assert p2.is_file()
     assert p2.stat().st_size > 0
 
-    # 3. Invalid data with no samples raises ValueError
+    # 3. From columnar mapping with partition_col
+    col_data = {
+        "tokens": [10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+        "split": ["train", "train", "train", "val", "val", "val"],
+    }
+    out3 = tmp_path / "beeswarm_col.png"
+    p3 = plot_beeswarm_box("tokens", col_data, out3, partition_col="split", sla=45.0)
+    assert p3.is_file()
+    assert p3.stat().st_size > 0
+
+    # 4. Invalid data with no samples raises ValueError
     with pytest.raises(ValueError, match="No sample data found"):
         plot_beeswarm_box("col", {}, tmp_path / "err.png")
 

@@ -182,3 +182,23 @@ def boot_config(config: AnalysisConfig) -> None:
     """Boot this process's config for the job about to run."""
     global CONFIG
     CONFIG = config
+
+
+def resolve_column_sla(
+    sla_spec: float | Mapping[str, float] | None,
+    column: str,
+    stats: Mapping[str, Any] | None = None,
+) -> float | None:
+    """Resolve an SLA limit threshold for a specific column.
+
+    Extracts the SLA from a global scalar, a column-keyed mapping, or an existing stats dict.
+    """
+    if sla_spec is not None:
+        if isinstance(sla_spec, Mapping):
+            val = sla_spec.get(column)
+            return float(val) if val is not None else None
+        return float(sla_spec)
+    if stats is not None and isinstance(stats, Mapping) and "sla" in stats and stats["sla"] is not None:
+        return float(stats["sla"])
+    return None
+

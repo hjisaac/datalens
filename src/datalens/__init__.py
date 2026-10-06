@@ -18,6 +18,7 @@ from .core import (
     build_config,
     discover_tasks,
     load_config,
+    resolve_column_sla,
     resolve_tasks,
     run_analysis,
 )
@@ -58,6 +59,7 @@ __all__ = [
     "plot_numeric_summary",
     "plot_partition_comparison",
     "plot_quantile_distribution",
+    "resolve_column_sla",
     "resolve_tasks",
     "run_analysis",
 ]
