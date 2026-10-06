@@ -1,42 +1,126 @@
 # DataLens
 
-**Fast, streaming map-reduce statistics for tabular datasets.**
+**Fast, streaming map-reduce statistics and publication-grade visualizations for tabular datasets.**
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-DataLens is a lightweight, high-performance library for computing corpus-level statistics across tabular data (Parquet, CSV, TSV, JSONL, and in-memory structures). Built on a streaming map-reduce architecture, it processes massive datasets in bounded memory using numerically stable online algorithms.
+DataLens is a lightweight library for computing corpus-level statistics and generating publication figures across tabular data (Parquet, CSV, TSV, JSONL, and in-memory structures) in strictly bounded memory using numerically stable online algorithms.
 
 ---
 
 ## Features
 
-- **Streaming & Numerically Stable**: Uses Welford's algorithm for $O(1)$-memory online mean and variance calculation without catastrophic precision loss.
-- **Multimodal Formats**: Native support for **Parquet**, **CSV**, **TSV**, **JSONL / NDJSON**, and direct **in-memory data** (lists of dicts, columnar arrays, PyArrow Tables, Pandas/Polars DataFrames).
-- **Parallel Multi-Processing**: Transparently scales across all CPU cores for disk-bound corpora, while running zero-overhead in-process for in-memory data.
-- **Unified Architecture**: A single, elegant pipeline (`Task -> Map -> Shuffle -> Reduce`) with zero branching between file and in-memory workflows.
-- **Publication-Grade Visualizations (`datalens.viz`)**: High-resolution, multi-style statistical figures out-of-the-box (dual-panel quantile fans + empirical CDFs, beeswarm + box plots, partition comparisons) with automated SLA threshold overlays and truncation analytics.
-- **First-Class Python & CLI Interfaces**: Strongly typed Python dataclasses (`AnalysisConfig`, `DataTask`, `FileTask`) alongside a modern **Typer** CLI with Rich output formatting.
-- **Featherweight Base**: Base installation requires only pure Python and NumPy. Heavy dependencies like `pyarrow` and `matplotlib` are completely optional extras (`[parquet]`, `[viz]`, `[all]`).
+- **Streaming & $O(1)$ Memory**: Welford's algorithm for online mean/variance and T-Digest for percentiles without loading full datasets.
+- **Multimodal Formats**: Native support for **Parquet**, **CSV**, **TSV**, **JSONL**, and **in-memory data** (dicts, arrays, Arrow, DataFrames).
+- **Parallel Multi-Processing**: Transparently scales across CPU cores for disk corpora with zero branching between file and in-memory workflows.
+- **Publication Visualizations (`datalens.viz`)**: High-resolution figures (dual-panel quantile fans, beeswarm + box plots, partition comparisons) with automated SLA threshold overlays.
+- **Featherweight**: Core engine depends only on pure Python and NumPy. `pyarrow`, `matplotlib`, and `mcp` are optional extras.
 
 ---
 
-## Supported Metric Accumulators
+## Installation
 
-| Metric Kind | Description | Outputs |
+```bash
+# Core engine:
+pip install git+https://github.com/hjisaac/datalens.git
+
+# With optional extras:
+pip install "datalens[parquet,viz,mcp] @ git+https://github.com/hjisaac/datalens.git"
+```
+
+---
+
+## Quickstart
+
+### Python API
+
+```python
+from datalens import AnalysisConfig, run_analysis
+
+config = AnalysisConfig(
+    root="/data/events",
+    file_pattern="*.parquet",
+    columns={
+        "latency_ms": "quantile",   # percentiles + sample reservoir for plotting
+        "price": "numeric",         # streaming mean, std, min, max
+        "status": "categorical",    # frequency counters
+    },
+    plots=True,                     # auto-generate publication figures
+    plot_dir="./plots",
+    sla={"latency_ms": 100.0},      # SLA threshold line & violation rate
+)
+
+result = run_analysis(config)
+result.to_json("stats.json")
+
+# Or render plots on demand:
+result.plot(output_dir="./plots", style="paper")
+result.plot_beeswarm("latency_ms", output_path="latency.png", sla=100.0)
+```
+
+### CLI
+
+```bash
+# Run analysis:
+datalens config.yaml -o stats.json
+
+# Run with publication plots and SLA threshold:
+datalens config.yaml --plots --sla 100.0 --plot-style paper
+```
+
+---
+
+## Visualizations & SLA Overlays
+
+DataLens generates publication-ready figures directly to PNG, SVG, or PDF:
+
+- **Dual-Panel Quantile Distribution**: Percentile fan chart (IQR & P05–P95 shading) with Box & Whisker summary and Empirical CDF.
+- **Beeswarm + Box Plot**: Box plot overlaid with jittered raw sample points for true distribution density without binning artifacts.
+- **SLA Threshold Overlays**: Reference threshold lines with callout badges and truncation violation metrics (`sla_exceeded_pct`).
+- **Visual Styles**: `datalens` (corporate modern), `paper` (academic print/LaTeX), and `dark`. Use `captions=False` to strip titles for paper captions.
+
+<details>
+<summary><b>Click to expand full configuration options (<code>config.yaml</code>)</b></summary>
+
+```yaml
+root: /path/to/dataset
+file_pattern: "*.parquet"
+columns:
+  latency_ms: quantile
+  price: numeric
+  status_code: categorical
+  user_id: cardinality
+workers: null             # null = all CPUs, 1 = serial
+batch_size: 65536
+partition_depth: null
+top_categories: 10
+
+# Plotting & SLA
+plots: true
+plot_dir: "./plots"
+plot_style: "datalens"    # "datalens" | "paper" | "dark"
+plot_format: "png"        # "png" | "svg" | "pdf"
+plot_captions: true
+sla:
+  latency_ms: 100.0
+```
+</details>
+
+---
+
+## Accumulators & Performance
+
+| Kind | Description | Outputs |
 | :--- | :--- | :--- |
 | `numeric` | Streaming summary via Welford's algorithm | `count`, `mean`, `std`, `min`, `max` |
-| `quantile` | Streaming percentiles via Ted Dunning's T-Digest + reservoir sampling | `count`, `min`, `max`, `p01`–`p99`, `iqr`, `samples` |
+| `quantile` | Streaming percentiles (T-Digest + reservoir sampling) | `count`, `min`, `max`, `p01`–`p99`, `iqr`, `samples` |
 | `categorical` | Exact frequency counter with optional top-N truncation | `unique`, `counts: {value: frequency}` |
 | `cardinality` | Exact distinct-value tracking | `unique` |
 | `count` | Row / event counter | `count` |
 
----
-
-## Performance & Benchmarks
-
 <details>
-<summary><b>Click to expand benchmark results (up to 24M+ rows/sec)</b></summary>
+<summary><b>Click to view throughput benchmarks (up to 24M+ rows/sec)</b></summary>
 
 Empirical measurements on a standard CPU core (1,000,000 rows, batch size 50,000):
 
@@ -47,242 +131,24 @@ Empirical measurements on a standard CPU core (1,000,000 rows, batch size 50,000
 | **`QuantileAccumulator` (T-Digest)** | **~400K rows/s** | ~2.5 s | $O(C)$ centroid-bounded |
 | **Multi-Column (4 mixed metrics, 100k rows)** | **~205K rows/s** | ~487 ms | $O(1)$ bounded |
 
-> **Streaming Guarantee**: Because all statistics operate via online accumulators, memory usage remains strictly bounded regardless of whether the corpus has 10,000 or 100,000,000 rows.
+> **Streaming Guarantee**: Because all statistics operate via online accumulators, memory usage remains strictly bounded regardless of dataset scale.
 
 </details>
 
 ---
 
-## Installation
-
-### From GitHub
-```bash
-pip install git+https://github.com/hjisaac/datalens.git
-
-# With optional Parquet support:
-pip install "datalens[parquet] @ git+https://github.com/hjisaac/datalens.git"
-
-# With publication-grade visualization support:
-pip install "datalens[viz] @ git+https://github.com/hjisaac/datalens.git"
-
-# With Model Context Protocol (MCP) server support:
-pip install "datalens[mcp] @ git+https://github.com/hjisaac/datalens.git"
-
-# With all extras (Parquet + Viz + MCP):
-pip install "datalens[all] @ git+https://github.com/hjisaac/datalens.git"
-```
-
-### Local Development Installation
-```bash
-# Clone the repository
-git clone git@github.com:hjisaac/datalens.git
-cd datalens
-
-# Install in editable mode with development dependencies
-pip install -e ".[dev]"
-```
-
----
-
-## Quickstart
-
-### 1. Python API
-
-#### In-Memory Data (Single Process)
-```python
-from datalens import AnalysisConfig, run_analysis
-
-# Define metrics to compute
-config = AnalysisConfig(
-    columns={
-        "latency_ms": "numeric",
-        "status_code": "categorical",
-        "user_id": "cardinality",
-    }
-)
-
-# Any in-memory records (list of dicts, columnar dict, or PyArrow Table)
-records = [
-    {"latency_ms": 12.5, "status_code": 200, "user_id": "u1"},
-    {"latency_ms": 45.0, "status_code": 500, "user_id": "u2"},
-    {"latency_ms": 18.2, "status_code": 200, "user_id": "u1"},
-]
-
-result = run_analysis(config, source=records)
-
-# Save or inspect results
-result.to_json("stats.json")
-print(result.to_dict())
-```
-
-#### Scanning a Directory Dataset (Parallel Map-Reduce)
-```python
-from datalens import AnalysisConfig, run_analysis
-
-config = AnalysisConfig(
-    root="/data/events",
-    file_pattern="*.parquet",      # or "*.csv", "*.jsonl"
-    columns={
-        "latency_ms": "quantile",  # percentiles & sample points for plots
-        "price": "numeric",
-        "category": "categorical",
-    },
-    partition_depth=1,             # use the first subfolder as partition key
-    workers=8,                     # parallel worker processes (None = all CPUs)
-    top_categories=10,             # keep top 10 categories
-    plots=True,                    # auto-generate statistical charts
-    plot_dir="./plots",
-    sla={"latency_ms": 50.0},      # SLA threshold line & truncation analytics
-)
-
-result = run_analysis(config)
-result.to_json("corpus_stats.json")
-
-# Or render plots manually on demand:
-plot_paths = result.plot(output_dir="./plots", style="paper")
-```
-
-#### Using Streaming Accumulators Directly
-```python
-import numpy as np
-from datalens import NumericAccumulator, CategoricalAccumulator
-
-# Welford online numeric summary:
-acc = NumericAccumulator()
-acc.update(np.array([10.0, 20.0, 30.0]))
-acc.update(np.array([40.0, 50.0]))
-print(acc.result())
-# {'count': 5, 'mean': 30.0, 'std': 14.14..., 'min': 10.0, 'max': 50.0}
-```
-
----
-
-## Statistical Visualizations (`datalens.viz`)
-
-DataLens includes an publication-grade visualization suite designed for data science reports, executive summaries, and academic papers. Figures are rendered without heavy dashboard runtimes and save directly to PNG, SVG, or PDF.
-
-### Plot Types
-
-1. **Dual-Panel Quantile Distribution (`plot_quantile_distribution`)**:
-   - **Left Panel**: Percentile fan chart (IQR and P05–P95 shading) with an integrated Box & Whisker summary and statistical callout badge (mean, median, std, IQR).
-   - **Right Panel**: Empirical Cumulative Distribution Function (ECDF) displaying percentile coverage across the full support.
-2. **Beeswarm + Box Plot (`plot_beeswarm_box`)**:
-   - Overlays jittered, semi-transparent raw sample points directly onto a classic Tukey box plot.
-   - Eliminates binning artifacts and reveals true multi-modal distribution densities.
-3. **Partition Comparison (`plot_partition_comparison`)**:
-   - Grouped horizontal or vertical comparisons across dataset partitions (e.g., train vs. val vs. test, or multi-shard corpora).
-4. **Categorical Frequency (`plot_categorical_frequency`)**:
-   - Clean, ranked bar plots with percentage callouts and Pareto distributions.
-
-### SLA Threshold Overlays & Truncation Analytics
-
-Specify an SLA limit to automatically render:
-- A dashed red threshold reference line with callout badge.
-- Truncation / violation metrics (`sla_exceeded_count`, `sla_exceeded_pct`) in the figure callout badge.
-- Both global and column-specific thresholds are supported.
-
-```python
-# Standalone beeswarm + box plot with SLA overlay:
-result.plot_beeswarm(
-    column="latency_ms",
-    output_path="latency_beeswarm.png",
-    sla=100.0,
-    style="datalens",
-)
-```
-
-### Visual Themes
-
-Switch visual styles easily via `style=`:
-- **`datalens`** (default): Modern corporate dark-blue palette with slate accents and subtle gridlines.
-- **`paper`**: Clean, high-contrast, black-and-white-friendly palette designed for academic publications (LaTeX/PDF) and print.
-- **`dark`**: Sleek charcoal-slate theme for dark mode dashboards and terminal previews.
-
-Set `captions=False` to strip titles and text badges for direct inclusion into academic paper figure captions.
-
----
-
-## Command Line Interface (CLI)
-
-DataLens provides a built-in Typer command with Rich formatting:
-
-```bash
-# Run analysis and print formatted JSON to stdout:
-datalens config.yaml
-
-# Save to output file with custom worker processes:
-datalens config.yaml --output stats.json --workers 8
-
-# Generate publication plots alongside statistics:
-datalens config.yaml --plots --plot-dir ./figures --plot-style paper --plot-format svg
-
-# Enforce an SLA threshold across numerical distributions:
-datalens config.yaml --plots --sla 512.0
-
-# Disable plots explicitly:
-datalens config.yaml --no-plots
-
-# Silent mode (suppress logs):
-datalens config.yaml -o stats.json -q
-```
-
----
-
-## Configuration (`config.yaml`)
-
-```yaml
-# Dataset root directory
-root: /path/to/dataset
-
-# Physical column name → accumulator kind
-columns:
-  latency_ms: quantile      # supports percentiles + sample plots
-  price: numeric
-  status_code: categorical
-  user_id: cardinality
-
-# File pattern glob
-file_pattern: "*.parquet"
-
-# Number of worker processes (null = all CPUs; 1 = serial)
-workers: null
-
-# Rows read per batch during mapping
-batch_size: 65536
-
-# Truncate partition key depth from directory tree
-partition_depth: null
-
-# Keep only top-N categories (null = all)
-top_categories: 10
-
-# Plotting configuration (optional)
-plots: true
-plot_dir: "./plots"
-plot_style: "datalens"     # "datalens" | "paper" | "dark"
-plot_format: "png"         # "png" | "svg" | "pdf"
-plot_captions: true
-
-# SLA limits (scalar float or column-to-limit dictionary)
-sla:
-  latency_ms: 100.0
-```
-
----
-
 ## Model Context Protocol (MCP) Server
 
-DataLens includes a native **Model Context Protocol (MCP)** server that equips AI assistants (Claude Desktop, Cursor, Antigravity, Gemini) to inspect, profile, and plot datasets directly.
+DataLens includes an MCP server for AI assistants (Claude Desktop, Cursor, Gemini):
 
-### Starting the Server
 ```bash
 datalens mcp
-# or via standalone binary
-datalens-mcp
 ```
 
-### Adding to Claude Desktop / Cursor
-Add the following to your MCP client configuration (e.g. `claude_desktop_config.json`):
+<details>
+<summary><b>Click to expand MCP tools & client configuration</b></summary>
+
+### Claude Desktop / Cursor Configuration (`claude_desktop_config.json`)
 ```json
 {
   "mcpServers": {
@@ -294,26 +160,19 @@ Add the following to your MCP client configuration (e.g. `claude_desktop_config.
 }
 ```
 
-### Available MCP Tools & Capabilities
-* **`inspect_dataset`**: Inspects files or directories without reading them into memory. Infers schema, data types, null counts, and recommends optimal accumulator mappings.
-* **`compute_statistics`**: Runs distributed Map-Reduce statistics across tabular datasets with custom metric specifications.
-* **`profile_dataset`**: One-click profiling: automatically discovers schemas, maps columns, and returns a complete statistical report.
-* **`generate_dataset_plots`**: Generates publication-grade statistical charts (quantile distributions, beeswarm + box plots, categorical frequencies) directly from an AI prompt.
-* **Resource `datalens://workspace/datasets`**: Lists dataset files in the current workspace.
-* **Prompt `profile_and_analyze`**: Guides LLM agents through structured distribution analysis, outlier detection, and data reporting.
+### Available Tools
+- `inspect_dataset`: Infers schema and null counts without reading into memory.
+- `compute_statistics`: Runs distributed map-reduce statistics.
+- `profile_dataset`: Auto-discovers schemas and returns full statistical profiles.
+- `generate_dataset_plots`: Produces publication-grade charts directly from AI prompts.
+</details>
 
 ---
 
-## Testing
-
-Run the test suite using `pytest`:
+## Testing & License
 
 ```bash
 pytest
 ```
-
----
-
-## License
 
 MIT License. See [LICENSE](LICENSE) for details.
