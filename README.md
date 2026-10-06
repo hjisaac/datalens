@@ -107,6 +107,31 @@ sla:
 ```
 </details>
 
+<details>
+<summary><b>Click to preview sample figure gallery (Quantile Fan, Beeswarm + Box, Partition, Pareto)</b></summary>
+
+<p align="center">
+  <b>Dual-Panel Quantile Distribution (Fan + Box & Empirical CDF with SLA Cutoff)</b><br>
+  <img src="docs/images/quantile_distribution_sla.png" alt="Dual-Panel Quantile Distribution with SLA Overlay" width="95%" />
+</p>
+
+<p align="center">
+  <b>Beeswarm + Box Plot (Raw Sample Jitter Density with SLA Limit)</b><br>
+  <img src="docs/images/beeswarm_box_sla.png" alt="Beeswarm Box Plot with SLA Limit" width="95%" />
+</p>
+
+<p align="center">
+  <b>Multi-Partition Comparison across Splits</b><br>
+  <img src="docs/images/partition_comparison_sla.png" alt="Partition Comparison Across Shards" width="85%" />
+</p>
+
+<p align="center">
+  <b>Categorical Frequency Pareto Distribution</b><br>
+  <img src="docs/images/categorical_frequency.png" alt="Categorical Frequency Pareto Distribution" width="85%" />
+</p>
+
+</details>
+
 ---
 
 ## Real-World Examples
@@ -167,6 +192,12 @@ print(f"Truncated Documents: {metrics['sla_exceeded_count']:,} ({metrics['sla_ex
 # Output: Truncated Documents: 14,200 (1.42%)
 ```
 
+#### Generated Figures:
+<p align="center">
+  <img src="docs/images/quantile_distribution_sla.png" alt="Dual-Panel Quantile Distribution with SLA Overlay" width="95%" />
+  <img src="docs/images/beeswarm_box_sla.png" alt="Beeswarm Box Plot with SLA Limit" width="95%" />
+</p>
+
 ---
 
 ### 2. Microservices API Observability: Streaming Latency SLA Diagnostics
@@ -211,6 +242,11 @@ print(result.to_dict()["global"]["latency_ms"])
 # }
 ```
 
+#### Generated Figure:
+<p align="center">
+  <img src="docs/images/categorical_frequency.png" alt="Categorical Frequency Pareto Distribution" width="85%" />
+</p>
+
 ---
 
 ### 3. Multi-Partition Comparative Analysis across Shards
@@ -252,6 +288,11 @@ for partition, stats in result.to_dict()["partitions"].items():
 # [region=us-east] P95 duration: 240.5s | >300s SLA: 1.15%
 # [region=eu-west] P95 duration: 318.2s | >300s SLA: 6.40%
 ```
+
+#### Generated Figure:
+<p align="center">
+  <img src="docs/images/partition_comparison_sla.png" alt="Partition Comparison Across Shards" width="85%" />
+</p>
 
 </details>
 
