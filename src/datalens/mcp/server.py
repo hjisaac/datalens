@@ -118,14 +118,15 @@ def create_mcp_server() -> MCPServer:
         name="generate_dataset_plots",
         description=(
             "Generate publication-ready statistical figures (quantile distributions, category frequencies, "
-            "partition comparisons) for any dataset. Supports 'datalens', 'paper' (academic), and 'dark' styles, "
-            "and optional figure captions for paper inclusion."
+            "partition comparisons, beeswarm box density) for any dataset. Supports 'datalens', 'paper' (academic), "
+            "and 'dark' styles, optional SLA / threshold limit lines, and optional figure captions for paper inclusion."
         ),
     )
     def generate_dataset_plots(
         path: str,
         out_dir: str = "plots",
         format: str = "png",
+        sla: float | None = None,
         captions: bool = True,
         style: str = "datalens",
     ) -> str:
@@ -134,6 +135,7 @@ def create_mcp_server() -> MCPServer:
             path=path,
             out_dir=out_dir,
             format=format,
+            sla=sla,
             captions=captions,
             style=style,
         )

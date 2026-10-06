@@ -18,6 +18,7 @@ from .core import (
     build_config,
     discover_tasks,
     load_config,
+    resolve_column_sla,
     resolve_tasks,
     run_analysis,
 )
@@ -26,6 +27,7 @@ from .viz import (
     generate_plots,
     get_palette,
     get_style_rc,
+    plot_beeswarm_box,
     plot_categorical_frequency,
     plot_numeric_summary,
     plot_partition_comparison,
@@ -52,10 +54,12 @@ __all__ = [
     "get_palette",
     "get_style_rc",
     "load_config",
+    "plot_beeswarm_box",
     "plot_categorical_frequency",
     "plot_numeric_summary",
     "plot_partition_comparison",
     "plot_quantile_distribution",
+    "resolve_column_sla",
     "resolve_tasks",
     "run_analysis",
 ]

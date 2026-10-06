@@ -93,6 +93,11 @@ def run_command(
         "--captions/--no-captions",
         help="Include in-figure titles and statistical callout boxes. Set to --no-captions for academic papers.",
     ),
+    sla: Optional[float] = typer.Option(
+        None,
+        "--sla",
+        help="Optional SLA / threshold limit line to overlay on quantile, beeswarm, and comparison plots.",
+    ),
     verbose: bool = typer.Option(
         False,
         "-v",
@@ -120,6 +125,8 @@ def run_command(
         config.workers = workers
     if batch_size is not None:
         config.batch_size = batch_size
+    if sla is not None:
+        config.sla = sla
 
     try:
         result = run_analysis(config)
@@ -139,6 +146,7 @@ def run_command(
             generated = result.plot(
                 out_dir=target_dir,
                 format=plot_format,
+                sla=sla if sla is not None else getattr(config, "sla", None),
                 captions=captions,
                 style=plot_style,
             )

@@ -14,6 +14,7 @@ from datalens import (
     generate_plots,
     get_palette,
     get_style_rc,
+    plot_beeswarm_box,
     plot_categorical_frequency,
     plot_numeric_summary,
     plot_partition_comparison,
@@ -188,3 +189,119 @@ def test_mcp_generate_dataset_plots_tool(tmp_path: Path) -> None:
         p = Path(file_path_str)
         assert p.is_file()
         assert p.suffix == ".svg"
+
+
+def test_plot_quantile_distribution_with_sla(tmp_path: Path) -> None:
+    stats = {
+        "count": 1000,
+        "min": 1.0,
+        "max": 100.0,
+        "p01": 2.0,
+        "p05": 5.0,
+        "p25": 25.0,
+        "p50": 50.0,
+        "p75": 75.0,
+        "p90": 90.0,
+        "p95": 95.0,
+        "p99": 99.0,
+        "iqr": 50.0,
+        "sla": 80.0,
+        "sla_exceeded_count": 200,
+        "sla_exceeded_pct": 20.0,
+    }
+    out_png = tmp_path / "quantile_sla.png"
+    result_path = plot_quantile_distribution("latency", stats, out_png, sla=80.0, captions=True)
+    assert result_path.is_file()
+    assert result_path.stat().st_size > 0
+
+
+def test_plot_beeswarm_box(tmp_path: Path) -> None:
+    # 1. From raw list
+    data_list = [10.0, 15.0, 20.0, 22.0, 30.0, 45.0, 50.0, 80.0]
+    out1 = tmp_path / "beeswarm_raw.png"
+    p1 = plot_beeswarm_box("token_count", data_list, out1, sla=40.0)
+    assert p1.is_file()
+    assert p1.stat().st_size > 0
+
+    # 2. From partition dictionary
+    part_data = {
+        "Old Testament": [50.0, 60.0, 120.0, 150.0, 200.0, 520.0],
+        "New Testament": [40.0, 55.0, 80.0, 95.0, 110.0, 250.0],
+    }
+    out2 = tmp_path / "beeswarm_parts.png"
+    p2 = plot_beeswarm_box("token_count", part_data, out2, sla=512.0, captions=True)
+    assert p2.is_file()
+    assert p2.stat().st_size > 0
+
+    # 3. From columnar mapping with partition_col
+    col_data = {
+        "tokens": [10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
+        "split": ["train", "train", "train", "val", "val", "val"],
+    }
+    out3 = tmp_path / "beeswarm_col.png"
+    p3 = plot_beeswarm_box("tokens", col_data, out3, partition_col="split", sla=45.0)
+    assert p3.is_file()
+    assert p3.stat().st_size > 0
+
+    # 4. Invalid data with no samples raises ValueError
+    with pytest.raises(ValueError, match="No sample data found"):
+        plot_beeswarm_box("col", {}, tmp_path / "err.png")
+
+
+def test_plot_beeswarm_from_analysis_result(sample_analysis_result: AnalysisResult, tmp_path: Path) -> None:
+    out = tmp_path / "result_beeswarm.png"
+    res_path = sample_analysis_result.plot_beeswarm("latency", out, sla=50.0)
+    assert res_path.is_file()
+    assert res_path.stat().st_size > 0
+
+
+def test_plot_partition_comparison_with_sla(tmp_path: Path) -> None:
+    groups = {
+        "us-east": {"latency": {"p25": 10.0, "p50": 20.0, "p75": 30.0, "p01": 5.0, "p99": 45.0, "min": 2.0, "max": 50.0}},
+        "eu-west": {"latency": {"p25": 15.0, "p50": 30.0, "p75": 45.0, "p01": 8.0, "p99": 60.0, "min": 5.0, "max": 70.0}},
+    }
+    out_png = tmp_path / "comp_sla.png"
+    result_path = plot_partition_comparison("latency", groups, out_png, kind="quantile", sla=25.0)
+    assert result_path.is_file()
+    assert result_path.stat().st_size > 0
+
+
+def test_generate_plots_with_sla_and_beeswarm(tmp_path: Path) -> None:
+    config = AnalysisConfig(
+        columns={"tokens": "quantile"},
+        sla=100.0,
+    )
+    records = [{"tokens": float(i)} for i in range(1, 201)]
+    result = run_analysis(config, source=records)
+
+    plots = result.plot(out_dir=tmp_path / "plots_sla", sla=100.0)
+    assert "tokens_quantile" in plots
+    assert "tokens_beeswarm" in plots
+    assert plots["tokens_beeswarm"].is_file()
+    assert plots["tokens_beeswarm"].stat().st_size > 0
+
+
+def test_cli_sla_flag(tmp_path: Path) -> None:
+    import yaml
+
+    cfg_file = tmp_path / "job_sla.yaml"
+    csv_file = tmp_path / "data_sla.csv"
+    csv_file.write_text("tokens\n50.0\n120.0\n200.0\n", encoding="utf-8")
+
+    with cfg_file.open("w", encoding="utf-8") as f:
+        yaml.dump(
+            {
+                "root": str(tmp_path),
+                "columns": {"tokens": "quantile"},
+                "file_pattern": "data_sla.csv",
+                "workers": 1,
+            },
+            f,
+        )
+
+    out_dir = tmp_path / "cli_plots_sla"
+    res = runner.invoke(app, ["run", str(cfg_file), "--plot-dir", str(out_dir), "--sla", "100.0"])
+    assert res.exit_code == 0
+    assert (out_dir / "tokens_quantile.png").is_file()
+    assert (out_dir / "tokens_beeswarm.png").is_file()
+

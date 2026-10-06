@@ -13,6 +13,7 @@ from .config import (
     build_config,
     config_summary,
     load_config,
+    resolve_column_sla,
     resolved_workers,
 )
 from .discovery import discover_tasks, resolve_tasks
@@ -48,6 +49,7 @@ __all__ = [
     "map_task",
     "reduce_group",
     "render_partial",
+    "resolve_column_sla",
     "resolve_tasks",
     "resolved_workers",
     "run_analysis",

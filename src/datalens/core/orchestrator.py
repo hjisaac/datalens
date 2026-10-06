@@ -71,6 +71,7 @@ def run_analysis(
             result.plot(
                 out_dir=getattr(config, "plot_dir", "plots"),
                 format=getattr(config, "plot_format", "png"),
+                sla=getattr(config, "sla", None),
                 captions=getattr(config, "plot_captions", True),
                 style=getattr(config, "plot_style", "datalens"),
             )

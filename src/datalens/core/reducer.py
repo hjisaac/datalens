@@ -26,7 +26,11 @@ def render_partial(key: tuple[str, ...], partial: PartialStats) -> dict:
         if kind == "categorical":
             output[column] = accumulator.result(top=config.top_categories)
         elif kind == "quantile":
-            output[column] = accumulator.result(quantiles=getattr(config, "quantiles", None))
+            col_sla = config_module.resolve_column_sla(getattr(config, "sla", None), column)
+            output[column] = accumulator.result(
+                quantiles=getattr(config, "quantiles", None),
+                sla=col_sla,
+            )
         else:
             output[column] = accumulator.result()
     return output

@@ -159,6 +159,9 @@ class QuantileAccumulator(Accumulator):
     min_val: float = math.inf
     max_val: float = -math.inf
     total_weight: float = 0.0
+    count: int = 0
+    sample_capacity: int = 250
+    sample: list[float] = field(default_factory=list)
 
     def update(self, values: np.ndarray) -> None:
         """Fold a batch of numeric values into the digest."""
@@ -171,6 +174,33 @@ class QuantileAccumulator(Accumulator):
         self.min_val = min(self.min_val, float(finite.min()))
         self.max_val = max(self.max_val, float(finite.max()))
         self.buffer.append(finite)
+
+        # High-performance vectorized Algorithm R reservoir sampling
+        if self.sample_capacity > 0:
+            cur_len = len(self.sample)
+            needed = self.sample_capacity - cur_len
+            if needed > 0:
+                take = min(needed, finite.size)
+                self.sample.extend(float(x) for x in finite[:take])
+                finite_tail = finite[take:]
+                start_n = self.count + take
+            else:
+                finite_tail = finite
+                start_n = self.count
+
+            rem = finite_tail.size
+            if rem > 0 and start_n >= self.sample_capacity:
+                positions = np.arange(start_n + 1, start_n + rem + 1, dtype=np.float64)
+                probs = self.sample_capacity / positions
+                selected_mask = np.random.random(rem) < probs
+                selected_items = finite_tail[selected_mask]
+                if selected_items.size > 0:
+                    replace_slots = np.random.randint(0, self.sample_capacity, size=selected_items.size)
+                    for slot, val in zip(replace_slots, selected_items):
+                        self.sample[slot] = float(val)
+
+        self.count += finite.size
+
         if sum(len(b) for b in self.buffer) > max(1000, int(5 * self.delta)):
             self.compress()
 
@@ -236,6 +266,27 @@ class QuantileAccumulator(Accumulator):
         """Merge another quantile accumulator into this one."""
         self.compress()
         other.compress()
+
+        # Merge reservoir samples proportionally
+        if self.sample_capacity > 0 and other.sample:
+            if not self.sample:
+                self.sample = list(other.sample)
+            else:
+                combined = self.sample + other.sample
+                if len(combined) > self.sample_capacity:
+                    w1 = max(1.0, float(self.count if self.count > 0 else self.total_weight))
+                    w2 = max(1.0, float(other.count if other.count > 0 else other.total_weight))
+                    prob_self = w1 / (w1 + w2)
+                    n_self = int(round(self.sample_capacity * prob_self))
+                    n_other = self.sample_capacity - n_self
+                    p1 = np.random.choice(len(self.sample), size=min(len(self.sample), n_self), replace=False) if n_self > 0 else []
+                    p2 = np.random.choice(len(other.sample), size=min(len(other.sample), n_other), replace=False) if n_other > 0 else []
+                    self.sample = [self.sample[i] for i in p1] + [other.sample[j] for j in p2]
+                else:
+                    self.sample = combined
+
+        self.count += other.count
+
         if other.total_weight == 0:
             return self
         if self.total_weight == 0:
@@ -253,6 +304,42 @@ class QuantileAccumulator(Accumulator):
         self.buffer = []
         self.compress()
         return self
+
+    def cdf(self, value: float) -> float | None:
+        """Estimate the cumulative distribution function P(X <= value) in [0, 1]."""
+        self.compress()
+        if len(self.means) == 0:
+            return None
+        if value <= self.min_val:
+            return 0.0
+        if value >= self.max_val:
+            return 1.0
+
+        total_w = self.total_weight
+        if total_w == 0:
+            return None
+
+        cum_weights = np.cumsum(self.weights) - self.weights / 2.0
+
+        if value <= self.means[0]:
+            if self.means[0] == self.min_val:
+                return 0.0
+            return float(cum_weights[0] * (value - self.min_val) / (self.means[0] - self.min_val)) / total_w
+
+        if value >= self.means[-1]:
+            if self.max_val == self.means[-1]:
+                return 1.0
+            return float(cum_weights[-1] + (total_w - cum_weights[-1]) * (value - self.means[-1]) / (self.max_val - self.means[-1])) / total_w
+
+        idx = int(np.searchsorted(self.means, value))
+        left = idx - 1
+        right = idx
+        span_x = self.means[right] - self.means[left]
+        if span_x == 0:
+            return float(cum_weights[left] / total_w)
+        fraction = (value - self.means[left]) / span_x
+        target_w = cum_weights[left] + fraction * (cum_weights[right] - cum_weights[left])
+        return float(max(0.0, min(1.0, target_w / total_w)))
 
     def quantile(self, q: float) -> float | None:
         """Compute the estimated value at quantile q in [0, 1]."""
@@ -284,8 +371,12 @@ class QuantileAccumulator(Accumulator):
         fraction = (target - cum_weights[left]) / span
         return float(self.means[left] + fraction * (self.means[right] - self.means[left]))
 
-    def result(self, quantiles: Sequence[float] | None = None) -> dict[str, Any]:
-        """Render count, min, max, iqr, and percentiles."""
+    def result(
+        self,
+        quantiles: Sequence[float] | None = None,
+        sla: float | None = None,
+    ) -> dict[str, Any]:
+        """Render count, min, max, iqr, percentiles, and optional SLA metrics."""
         self.compress()
         if self.total_weight == 0:
             return {
@@ -303,9 +394,10 @@ class QuantileAccumulator(Accumulator):
                 "iqr": None,
             }
 
+        total_n = self.count if self.count > 0 else int(round(self.total_weight))
         target_quantiles = quantiles if quantiles is not None else [0.01, 0.05, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99]
         res: dict[str, Any] = {
-            "count": int(self.total_weight),
+            "count": total_n,
             "min": self.min_val,
             "max": self.max_val,
         }
@@ -319,5 +411,19 @@ class QuantileAccumulator(Accumulator):
         p25 = self.quantile(0.25)
         p75 = self.quantile(0.75)
         res["iqr"] = (p75 - p25) if (p75 is not None and p25 is not None) else None
+
+        if sla is not None:
+            sla_cdf = self.cdf(sla)
+            if sla_cdf is not None:
+                sla_exceeded_pct = max(0.0, min(100.0, (1.0 - sla_cdf) * 100.0))
+                sla_count = int(round(total_n * (1.0 - sla_cdf)))
+                res["sla"] = sla
+                res["sla_exceeded_pct"] = round(sla_exceeded_pct, 2)
+                res["sla_exceeded_count"] = sla_count
+                res["sla_compliant_pct"] = round(100.0 - sla_exceeded_pct, 2)
+
+        if self.sample:
+            res["sample"] = list(self.sample)
+
         return res
 
