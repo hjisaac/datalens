@@ -132,7 +132,18 @@ def map_task(task: Task) -> tuple[tuple[str, ...], PartialStats]:
                 read_cols.append(col)
     columns = tuple(read_cols)
     readers = getattr(config, "readers", None)
-    source_name = Path(task.path).name if isinstance(task, FileTask) else None
+    source_name: str | None = None
+    if isinstance(task, FileTask):
+        task_path = Path(task.path)
+        root_path = getattr(config, "root", None)
+        if root_path is not None:
+            try:
+                rel = task_path.resolve().relative_to(Path(root_path).resolve())
+                source_name = rel.as_posix() if rel.as_posix() != "." else task_path.name
+            except ValueError:
+                source_name = str(task.path)
+        else:
+            source_name = str(task.path)
     row_offset = 0
 
     for batch in task.iter_batches(columns=columns, batch_size=config.batch_size, readers=readers):
