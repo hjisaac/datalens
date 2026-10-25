@@ -64,7 +64,7 @@ def create_mcp_server() -> MCPServer:
         description=(
             "Execute streaming Map-Reduce statistics on a tabular dataset. "
             "Computes exact/streaming metrics in bounded memory: "
-            "'numeric' (mean, std, min, max), 'quantile' (T-Digest percentiles p01-p99, IQR), "
+            "'numeric' (mean, std, min, max), 'quantile' (T-Digest percentiles p01-p99, IQR, and optional landmark exemplars), "
             "'categorical' (top frequency tables), 'cardinality' (distinct counts), and row counts."
         ),
     )
@@ -77,6 +77,10 @@ def create_mcp_server() -> MCPServer:
         top_categories: int = 10,
         workers: int | None = None,
         batch_size: int = 65_536,
+        with_exemplars: bool = False,
+        id_column: str | None = None,
+        preview_column: str | None = None,
+        exemplar_columns: list[str] | None = None,
     ) -> str:
         """Compute parallel streaming dataset statistics."""
         data = _compute_statistics(
@@ -88,6 +92,10 @@ def create_mcp_server() -> MCPServer:
             top_categories=top_categories,
             workers=workers,
             batch_size=batch_size,
+            with_exemplars=with_exemplars,
+            id_column=id_column,
+            preview_column=preview_column,
+            exemplar_columns=exemplar_columns,
         )
         return json.dumps(data, indent=2, default=str)
 
@@ -104,6 +112,9 @@ def create_mcp_server() -> MCPServer:
         include_quantiles: bool = True,
         max_categories: int = 10,
         workers: int | None = None,
+        with_exemplars: bool = False,
+        id_column: str | None = None,
+        preview_column: str | None = None,
     ) -> str:
         """Automated end-to-end dataset profiling."""
         data = _profile_dataset(
@@ -111,6 +122,9 @@ def create_mcp_server() -> MCPServer:
             include_quantiles=include_quantiles,
             max_categories=max_categories,
             workers=workers,
+            with_exemplars=with_exemplars,
+            id_column=id_column,
+            preview_column=preview_column,
         )
         return json.dumps(data, indent=2, default=str)
 

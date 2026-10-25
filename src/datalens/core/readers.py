@@ -138,8 +138,12 @@ def _read_delimited_batches(
             yield _dict_rows_to_batch(buffer, selected)
 
 
-def _dict_rows_to_batch(rows: list[dict[str, str]], columns: Sequence[str]) -> ColumnBatch:
-    column_data = {name: [row.get(name) for row in rows] for name in columns}
+def _dict_rows_to_batch(rows: list[dict[str, Any]], columns: Sequence[str]) -> ColumnBatch:
+    if columns:
+        selected = [name for name in columns if any(name in row for row in rows)]
+    else:
+        selected = sorted({key for row in rows for key in row})
+    column_data = {name: [row.get(name) for row in rows] for name in selected}
     return ColumnBatch(num_rows=len(rows), columns=column_data)
 
 

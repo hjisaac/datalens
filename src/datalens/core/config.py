@@ -30,6 +30,10 @@ _DEFAULTS: dict[str, Any] = {
     "quantiles": None,
     "quantile_compression": 100.0,
     "sla": None,
+    "with_exemplars": False,
+    "id_column": None,
+    "preview_column": None,
+    "exemplar_columns": None,
     "plots": False,
     "plot_dir": "plots",
     "plot_format": "png",
@@ -58,6 +62,10 @@ class AnalysisConfig:
     quantiles: list[float] | None = None
     quantile_compression: float = 100.0
     sla: float | dict[str, float] | None = None
+    with_exemplars: bool = False
+    id_column: str | None = None
+    preview_column: str | None = None
+    exemplar_columns: list[str] | None = None
     plots: bool = False
     plot_dir: str | Path = "plots"
     plot_format: str = "png"
@@ -69,6 +77,8 @@ class AnalysisConfig:
             self.root = Path(self.root)
         self.columns = dict(self.columns)
         self.readers = dict(self.readers)
+        if self.exemplar_columns is not None:
+            self.exemplar_columns = [str(c) for c in self.exemplar_columns]
         if self.quantiles is not None:
             self.quantiles = [float(q) for q in self.quantiles]
             for q in self.quantiles:
@@ -132,6 +142,10 @@ def build_config(data: Mapping[str, Any] | AnalysisConfig | DictConfig) -> Analy
         quantiles=merged.get("quantiles"),
         quantile_compression=merged.get("quantile_compression", 100.0),
         sla=merged.get("sla"),
+        with_exemplars=bool(merged.get("with_exemplars", False)),
+        id_column=merged.get("id_column"),
+        preview_column=merged.get("preview_column"),
+        exemplar_columns=merged.get("exemplar_columns"),
         plots=merged.get("plots", False),
         plot_dir=merged.get("plot_dir", "plots"),
         plot_format=merged.get("plot_format", "png"),
@@ -172,6 +186,10 @@ def config_summary(config: AnalysisConfig | DictConfig) -> dict[str, Any]:
         "readers": dict(getattr(config, "readers", {})),
         "quantiles": getattr(config, "quantiles", None),
         "sla": getattr(config, "sla", None),
+        "with_exemplars": getattr(config, "with_exemplars", False),
+        "id_column": getattr(config, "id_column", None),
+        "preview_column": getattr(config, "preview_column", None),
+        "exemplar_columns": getattr(config, "exemplar_columns", None),
     }
 
 

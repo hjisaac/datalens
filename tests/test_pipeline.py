@@ -182,3 +182,97 @@ def test_direct_accumulator_classes() -> None:
     assert cnt.result()["count"] == 10
 
 
+def test_pipeline_quantile_exemplars_keyed_parquet(tmp_path: Path) -> None:
+    """Verify projection pushdown and landmark attribution on keyed Parquet shards."""
+    from datalens import AnalysisConfig, run_analysis
+
+    table_1 = pa.table(
+        {
+            "doc_id": [f"doc_{i}" for i in range(1, 51)],
+            "token_count": [float(i * 10) for i in range(1, 51)],
+            "preview_text": [f"Passage content for doc_{i}" for i in range(1, 51)],
+        }
+    )
+    table_2 = pa.table(
+        {
+            "doc_id": [f"doc_{i}" for i in range(51, 101)],
+            "token_count": [float(i * 10) for i in range(51, 101)],
+            "preview_text": [f"Passage content for doc_{i}" for i in range(51, 101)],
+        }
+    )
+    _write_parquet(tmp_path / "shard_1.parquet", table_1)
+    _write_parquet(tmp_path / "shard_2.parquet", table_2)
+
+    config = AnalysisConfig(
+        root=tmp_path,
+        columns={"token_count": "quantile"},
+        quantiles=[0.50, 0.90, 0.95],
+        with_exemplars=True,
+        id_column="doc_id",
+        preview_column="preview_text",
+        workers=1,
+    )
+    result = run_analysis(config)
+    stats = result.groups[()]["token_count"]
+
+    assert "exemplars" in stats
+    ex = stats["exemplars"]
+    assert ex["min"] == {
+        "id": "doc_1",
+        "value": 10.0,
+        "preview": "Passage content for doc_1",
+    }
+    assert ex["max"] == {
+        "id": "doc_100",
+        "value": 1000.0,
+        "preview": "Passage content for doc_100",
+    }
+    assert ex["p50"]["id"] in ("doc_50", "doc_51")
+    assert ex["p50"]["preview"].startswith("Passage content for doc_5")
+    assert ex["p90"]["id"] in ("doc_90", "doc_91")
+    assert ex["p95"]["id"] in ("doc_95", "doc_96")
+
+
+def test_pipeline_quantile_exemplars_unkeyed_with_nulls(tmp_path: Path) -> None:
+    """Verify unkeyed datasets fall back to row_index, source, and context columns without NaN drift."""
+    from datalens import AnalysisConfig, run_analysis
+
+    table = pa.table(
+        {
+            "latency": [10.0, None, 50.0, None, 90.0],
+            "region": ["us-east", "us-west", "eu-central", "ap-south", "us-east"],
+        }
+    )
+    _write_parquet(tmp_path / "events.parquet", table)
+
+    config = AnalysisConfig(
+        root=tmp_path,
+        columns={"latency": "quantile", "region": "categorical"},
+        quantiles=[0.50],
+        with_exemplars=True,
+        workers=1,
+    )
+    result = run_analysis(config)
+    ex = result.groups[()]["latency"]["exemplars"]
+
+    assert ex["min"] == {
+        "value": 10.0,
+        "row_index": 0,
+        "source": "events.parquet",
+        "region": "us-east",
+    }
+    assert ex["p50"] == {
+        "value": 50.0,
+        "row_index": 2,
+        "source": "events.parquet",
+        "region": "eu-central",
+    }
+    assert ex["max"] == {
+        "value": 90.0,
+        "row_index": 4,
+        "source": "events.parquet",
+        "region": "us-east",
+    }
+
+
+

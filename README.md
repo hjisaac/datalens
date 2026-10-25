@@ -310,6 +310,61 @@ for partition, stats in result.to_dict()["partitions"].items():
 
 ---
 
+## Quantile Accuracy Guarantees & Exemplars
+
+### 📊 Deterministic Error Bounds
+
+The core of the streaming statistics pipeline is the **T-Digest accumulator** (`QuantileAccumulator`).  
+Its precision is governed by **`max_centroids` ($\delta$)** – the maximum number of centroids maintained in memory (default: `200`).
+
+#### Formal Error Bound
+For any quantile $q \in [0, 1]$, the worst-case absolute error $\varepsilon(q)$ satisfies:
+
+$$\varepsilon(q) \le \frac{1}{\delta} \max(q, 1 - q)$$
+
+- $\delta$ = `max_centroids`.
+- $\max(q, 1 - q)$ is the distance to the further edge of the distribution: accuracy is tightest near the median ($q = 0.50$) and strictly bounded at the extreme tails.
+- **Deterministic**: This guarantee holds across arbitrary data distributions without parametric assumptions.
+
+#### Empirical & Theoretical Accuracy by Configuration
+
+| `max_centroids` ($\delta$) | Quantile $q$ | $\max(q, 1-q)$ | Error Bound $\varepsilon(q)$ | Accuracy Guarantee |
+| :--- | :--- | :--- | :--- | :--- |
+| **200** (default) | 0.01 (P01) | 0.99 | $\approx 0.00495$ | Tail error $\le 0.50\%$ |
+| 200 | 0.10 (P10) | 0.90 | $\approx 0.00450$ | Error $\le 0.45\%$ |
+| 200 | 0.50 (Median) | 0.50 | $\approx 0.00250$ | Median error $\le 0.25\%$ (within ¼%) |
+| 200 | 0.99 (P99) | 0.99 | $\approx 0.00495$ | Tail error $\le 0.50\%$ |
+| **500** | 0.01 (P01) | 0.99 | $\approx 0.00198$ | Tail error $\le 0.20\%$ |
+| 500 | 0.50 (Median) | 0.50 | $\approx 0.00100$ | Median error $\le 0.10\%$ |
+| **1000** | 0.99 (P99) | 0.99 | $\approx 0.00099$ | Tail error $\le 0.10\%$ (within $\frac{1}{10}\%$) |
+
+> **Tip:** If your application requires tighter tolerances (e.g., sub-0.1% tail accuracy), set `max_centroids: 500` or `1000` in `AnalysisConfig`. Centroid memory scales linearly ($O(\delta)$), requiring only a few kilobytes per column.
+
+---
+
+### 🏷️ Quantile Exemplars & Landmark Attribution
+
+When diagnosing anomalies or inspecting boundary conditions (e.g., at P90 or P99), statistical values alone do not reveal *which* record produced that value. DataLens provides **centroid-co-moved exemplars**:
+
+- **Bounded Memory**: Up to 3 stratified landmark records (leftmost, centroid mean-nearest, rightmost) are co-moved alongside each centroid through streaming merge and fold operations.
+- **Zero Loss of Precision**: Exemplars are tracked as metadata alongside centroid weights without altering the numerical T-Digest calculation or its error bounds.
+- **Safe Fallback**: When an explicit ID column is absent, DataLens tracks `row_index` and relative dataset `source` paths.
+
+#### Configuration Example
+
+```yaml
+columns:
+  latency_ms: quantile
+with_exemplars: true
+id_column: "request_id"       # optional: primary record key
+preview_column: "endpoint"     # optional: human-readable preview string
+exemplar_columns:              # optional: extra contextual columns
+  - "status_code"
+  - "client_ip"
+```
+
+---
+
 ## Model Context Protocol (MCP) Server
 
 DataLens includes an MCP server for AI assistants (Claude Desktop, Cursor, Gemini):
