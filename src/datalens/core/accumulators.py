@@ -142,6 +142,16 @@ class CardinalityAccumulator(Accumulator):
         return {"unique": len(self.values)}
 
 
+def _normalize_exemplar(ex: Any, val: float) -> dict[str, Any]:
+    if isinstance(ex, dict):
+        out = dict(ex)
+        out.setdefault("value", val)
+        return out
+    if ex is None:
+        return {"value": val}
+    return {"id": ex, "value": val}
+
+
 @dataclass
 class QuantileAccumulator(Accumulator):
     """Streaming quantile/percentile estimator using Ted Dunning's T-Digest (MergingDigest).
@@ -162,17 +172,59 @@ class QuantileAccumulator(Accumulator):
     count: int = 0
     sample_capacity: int = 250
     sample: list[float] = field(default_factory=list)
+    centroid_exemplars: list[list[dict[str, Any]]] = field(default_factory=list)
+    buffer_exemplars: list[list[dict[str, Any] | None]] = field(default_factory=list)
+    min_exemplar: dict[str, Any] | None = None
+    max_exemplar: dict[str, Any] | None = None
 
-    def update(self, values: np.ndarray) -> None:
-        """Fold a batch of numeric values into the digest."""
+    def update(self, values: np.ndarray, exemplars: Sequence[Any] | None = None) -> None:
+        """Fold a batch of numeric values (and optional row exemplars) into the digest."""
         arr = np.asarray(values, dtype=np.float64)
         if arr.size == 0:
             return
-        finite = arr[~np.isnan(arr)]
+        valid_mask = ~np.isnan(arr)
+        finite = arr[valid_mask]
         if finite.size == 0:
             return
-        self.min_val = min(self.min_val, float(finite.min()))
-        self.max_val = max(self.max_val, float(finite.max()))
+
+        finite_ex: list[dict[str, Any] | None] | None = None
+        if exemplars is not None:
+            if len(exemplars) == arr.size:
+                raw_ex = [ex for ex, ok in zip(exemplars, valid_mask) if ok]
+            elif len(exemplars) == finite.size:
+                raw_ex = list(exemplars)
+            else:
+                raise ValueError(
+                    f"Length of exemplars ({len(exemplars)}) must match values ({arr.size})."
+                )
+            finite_ex = [_normalize_exemplar(ex, float(v)) for ex, v in zip(raw_ex, finite)]
+
+        min_idx = int(np.argmin(finite))
+        max_idx = int(np.argmax(finite))
+        batch_min = float(finite[min_idx])
+        batch_max = float(finite[max_idx])
+
+        if batch_min < self.min_val or (
+            batch_min == self.min_val and self.min_exemplar is None and finite_ex is not None
+        ):
+            self.min_val = batch_min
+            if finite_ex is not None:
+                self.min_exemplar = finite_ex[min_idx]
+
+        if batch_max > self.max_val or (
+            batch_max == self.max_val and self.max_exemplar is None and finite_ex is not None
+        ):
+            self.max_val = batch_max
+            if finite_ex is not None:
+                self.max_exemplar = finite_ex[max_idx]
+
+        if finite_ex is not None:
+            if not self.buffer_exemplars and self.buffer:
+                self.buffer_exemplars = [[None] * b.size for b in self.buffer]
+            self.buffer_exemplars.append(finite_ex)
+        elif self.buffer_exemplars or self.centroid_exemplars:
+            self.buffer_exemplars.append([None] * finite.size)
+
         self.buffer.append(finite)
 
         # High-performance vectorized Algorithm R reservoir sampling
@@ -208,10 +260,30 @@ class QuantileAccumulator(Accumulator):
         """Compress buffered points and existing centroids into merged centroids."""
         if not self.buffer and len(self.means) == 0:
             return
+
+        has_exemplars = bool(self.centroid_exemplars or self.buffer_exemplars)
+        all_ex: list[list[dict[str, Any]]] | None = None
+
         if self.buffer:
             buf_vals = np.concatenate(self.buffer)
             buf_weights = np.ones(buf_vals.size, dtype=np.float64)
             self.buffer = []
+            if has_exemplars:
+                flat_buf_ex: list[list[dict[str, Any]]] = [
+                    [ex] if ex is not None else []
+                    for chunk in self.buffer_exemplars
+                    for ex in chunk
+                ]
+                self.buffer_exemplars = []
+                if len(self.means) > 0:
+                    existing_ex = (
+                        self.centroid_exemplars
+                        if len(self.centroid_exemplars) == len(self.means)
+                        else [[] for _ in range(len(self.means))]
+                    )
+                    all_ex = existing_ex + flat_buf_ex
+                else:
+                    all_ex = flat_buf_ex
             if len(self.means) > 0:
                 all_means = np.concatenate([self.means, buf_vals])
                 all_weights = np.concatenate([self.weights, buf_weights])
@@ -221,10 +293,13 @@ class QuantileAccumulator(Accumulator):
         else:
             all_means = self.means
             all_weights = self.weights
+            if has_exemplars and len(self.centroid_exemplars) == len(self.means):
+                all_ex = self.centroid_exemplars
 
-        order = np.argsort(all_means)
+        order = np.argsort(all_means, kind="mergesort")
         means = all_means[order]
         weights = all_weights[order]
+        sorted_ex = [all_ex[idx] for idx in order] if all_ex is not None else None
         total_w = float(weights.sum())
         if total_w == 0:
             return
@@ -234,13 +309,32 @@ class QuantileAccumulator(Accumulator):
         def k(q: float) -> float:
             return (delta / (2.0 * math.pi)) * math.asin(max(-1.0, min(1.0, 2.0 * q - 1.0)))
 
+        def _pick_exemplars(start: int, end: int, target_mu: float) -> list[dict[str, Any]]:
+            assert sorted_ex is not None
+            cands = [ex for j in range(start, end) for ex in sorted_ex[j]]
+            if len(cands) <= 3:
+                return cands
+            cands.sort(key=lambda ex: float(ex.get("value", target_mu)))
+            mid_idx = min(
+                range(len(cands)),
+                key=lambda idx: abs(float(cands[idx].get("value", target_mu)) - target_mu),
+            )
+            picked = [cands[0], cands[mid_idx], cands[-1]]
+            unique: list[dict[str, Any]] = []
+            for item in picked:
+                if item not in unique:
+                    unique.append(item)
+            return unique
+
         new_means: list[float] = []
         new_weights: list[float] = []
+        new_exemplars: list[list[dict[str, Any]]] = []
 
         w_cum = 0.0
         cur_mu = float(means[0])
         cur_w = float(weights[0])
         q0 = 0.0
+        cluster_start = 0
 
         for i in range(1, len(means)):
             cand_w = cur_w + float(weights[i])
@@ -251,15 +345,22 @@ class QuantileAccumulator(Accumulator):
             else:
                 new_means.append(cur_mu)
                 new_weights.append(cur_w)
+                if sorted_ex is not None:
+                    new_exemplars.append(_pick_exemplars(cluster_start, i, cur_mu))
                 w_cum += cur_w
                 q0 = w_cum / total_w
                 cur_mu = float(means[i])
                 cur_w = float(weights[i])
+                cluster_start = i
 
         new_means.append(cur_mu)
         new_weights.append(cur_w)
+        if sorted_ex is not None:
+            new_exemplars.append(_pick_exemplars(cluster_start, len(means), cur_mu))
+
         self.means = np.array(new_means, dtype=np.float64)
         self.weights = np.array(new_weights, dtype=np.float64)
+        self.centroid_exemplars = new_exemplars if sorted_ex is not None else []
         self.total_weight = total_w
 
     def merge(self, other: QuantileAccumulator) -> QuantileAccumulator:
@@ -295,13 +396,40 @@ class QuantileAccumulator(Accumulator):
             self.min_val = other.min_val
             self.max_val = other.max_val
             self.total_weight = other.total_weight
+            self.centroid_exemplars = [list(c) for c in other.centroid_exemplars]
+            self.min_exemplar = dict(other.min_exemplar) if other.min_exemplar is not None else None
+            self.max_exemplar = dict(other.max_exemplar) if other.max_exemplar is not None else None
             return self
 
+        if other.min_val < self.min_val or (
+            other.min_val == self.min_val and self.min_exemplar is None and other.min_exemplar is not None
+        ):
+            self.min_exemplar = dict(other.min_exemplar) if other.min_exemplar is not None else None
         self.min_val = min(self.min_val, other.min_val)
+
+        if other.max_val > self.max_val or (
+            other.max_val == self.max_val and self.max_exemplar is None and other.max_exemplar is not None
+        ):
+            self.max_exemplar = dict(other.max_exemplar) if other.max_exemplar is not None else None
         self.max_val = max(self.max_val, other.max_val)
+
+        if self.centroid_exemplars or other.centroid_exemplars:
+            ex_self = (
+                self.centroid_exemplars
+                if len(self.centroid_exemplars) == len(self.means)
+                else [[] for _ in range(len(self.means))]
+            )
+            ex_other = (
+                other.centroid_exemplars
+                if len(other.centroid_exemplars) == len(other.means)
+                else [[] for _ in range(len(other.means))]
+            )
+            self.centroid_exemplars = ex_self + ex_other
+
         self.means = np.concatenate([self.means, other.means])
         self.weights = np.concatenate([self.weights, other.weights])
         self.buffer = []
+        self.buffer_exemplars = []
         self.compress()
         return self
 
@@ -371,15 +499,50 @@ class QuantileAccumulator(Accumulator):
         fraction = (target - cum_weights[left]) / span
         return float(self.means[left] + fraction * (self.means[right] - self.means[left]))
 
+    def exemplar(self, q: float) -> dict[str, Any] | None:
+        """Return the concrete exemplar record closest to quantile ``q`` in [0, 1]."""
+        self.compress()
+        if len(self.means) == 0:
+            return None
+        if q <= 0.0:
+            if self.min_exemplar is not None:
+                return dict(self.min_exemplar)
+            return {"value": self.min_val}
+        if q >= 1.0:
+            if self.max_exemplar is not None:
+                return dict(self.max_exemplar)
+            return {"value": self.max_val}
+
+        q_val = self.quantile(q)
+        if q_val is None:
+            return None
+
+        if self.centroid_exemplars:
+            best_ex: dict[str, Any] | None = None
+            best_dist = math.inf
+            for i, cluster_cands in enumerate(self.centroid_exemplars):
+                for ex in cluster_cands:
+                    val_i = float(ex.get("value", self.means[i]))
+                    dist = abs(val_i - q_val)
+                    if dist < best_dist:
+                        best_dist = dist
+                        best_ex = ex
+            if best_ex is not None:
+                return dict(best_ex)
+
+        idx = int(np.argmin(np.abs(self.means - q_val)))
+        return {"value": float(self.means[idx])}
+
     def result(
         self,
         quantiles: Sequence[float] | None = None,
         sla: float | None = None,
+        with_exemplars: bool | None = None,
     ) -> dict[str, Any]:
-        """Render count, min, max, iqr, percentiles, and optional SLA metrics."""
+        """Render count, min, max, iqr, percentiles, optional SLA metrics, and optional exemplars."""
         self.compress()
         if self.total_weight == 0:
-            return {
+            empty_res: dict[str, Any] = {
                 "count": 0,
                 "min": None,
                 "max": None,
@@ -393,6 +556,9 @@ class QuantileAccumulator(Accumulator):
                 "p99": None,
                 "iqr": None,
             }
+            if with_exemplars:
+                empty_res["exemplars"] = {}
+            return empty_res
 
         total_n = self.count if self.count > 0 else int(round(self.total_weight))
         target_quantiles = quantiles if quantiles is not None else [0.01, 0.05, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99]
@@ -402,11 +568,14 @@ class QuantileAccumulator(Accumulator):
             "max": self.max_val,
         }
 
-        for q in sorted(target_quantiles):
+        sorted_qs = sorted(target_quantiles)
+        q_keys: list[tuple[float, str]] = []
+        for q in sorted_qs:
             val = self.quantile(q)
             pct = q * 100
             key = f"p{int(pct):02d}" if pct.is_integer() else f"p{pct:g}"
             res[key] = val
+            q_keys.append((q, key))
 
         p25 = self.quantile(0.25)
         p75 = self.quantile(0.75)
@@ -424,6 +593,16 @@ class QuantileAccumulator(Accumulator):
 
         if self.sample:
             res["sample"] = list(self.sample)
+
+        include_ex = with_exemplars if with_exemplars is not None else bool(self.centroid_exemplars)
+        if include_ex:
+            exemplars_map: dict[str, Any] = {
+                "min": self.exemplar(0.0),
+            }
+            for q, key in q_keys:
+                exemplars_map[key] = self.exemplar(q)
+            exemplars_map["max"] = self.exemplar(1.0)
+            res["exemplars"] = exemplars_map
 
         return res
 

@@ -310,3 +310,51 @@ def test_quantile_accumulator_sla_metrics() -> None:
     assert res["sla_compliant_pct"] == pytest.approx(80.0, abs=2.5)
     assert res["sla_exceeded_count"] == pytest.approx(200, abs=25)
 
+
+def test_quantile_accumulator_exemplars_non_stationary_and_merge() -> None:
+    """Verify centroid-co-moved exemplars survive distribution shifts and parallel merges."""
+    acc1 = QuantileAccumulator(delta=100.0)
+    # First batch: values 1..500
+    v1 = np.arange(1.0, 501.0, dtype=np.float64)
+    ex1 = [{"id": f"low_{int(x)}", "value": float(x)} for x in v1]
+    acc1.update(v1, exemplars=ex1)
+
+    # Second batch (distribution shift in another worker): values 501..1000
+    acc2 = QuantileAccumulator(delta=100.0)
+    v2 = np.arange(501.0, 1001.0, dtype=np.float64)
+    ex2 = [{"id": f"high_{int(x)}", "value": float(x)} for x in v2]
+    acc2.update(v2, exemplars=ex2)
+
+    acc1.merge(acc2)
+    res = acc1.result(quantiles=[0.50, 0.90, 0.99], with_exemplars=True)
+
+    assert "exemplars" in res
+    exemplars = res["exemplars"]
+    assert exemplars["min"]["id"] == "low_1"
+    assert exemplars["min"]["value"] == 1.0
+    assert exemplars["max"]["id"] == "high_1000"
+    assert exemplars["max"]["value"] == 1000.0
+
+    # Global p50 is ~500.5, so its exemplar should have value near 500
+    assert exemplars["p50"]["value"] == pytest.approx(500.5, abs=15.0)
+    # Global p90 is ~900.5, so its exemplar must come from the second (high) shard
+    assert exemplars["p90"]["id"].startswith("high_")
+    assert exemplars["p90"]["value"] == pytest.approx(900.5, abs=15.0)
+    # Global p99 is ~990.5
+    assert exemplars["p99"]["id"].startswith("high_")
+    assert exemplars["p99"]["value"] == pytest.approx(990.5, abs=10.0)
+
+
+def test_quantile_accumulator_exemplars_nan_alignment() -> None:
+    """Ensure NaNs in values do not desynchronize exemplar attribution."""
+    acc = QuantileAccumulator()
+    vals = np.array([10.0, np.nan, 50.0, np.nan, 90.0])
+    ex = ["row_0", "row_1_nan", "row_2", "row_3_nan", "row_4"]
+    acc.update(vals, exemplars=ex)
+
+    res = acc.result(quantiles=[0.5], with_exemplars=True)
+    assert res["exemplars"]["min"] == {"id": "row_0", "value": 10.0}
+    assert res["exemplars"]["p50"] == {"id": "row_2", "value": 50.0}
+    assert res["exemplars"]["max"] == {"id": "row_4", "value": 90.0}
+
+

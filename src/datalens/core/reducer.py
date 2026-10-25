@@ -30,6 +30,7 @@ def render_partial(key: tuple[str, ...], partial: PartialStats) -> dict:
             output[column] = accumulator.result(
                 quantiles=getattr(config, "quantiles", None),
                 sla=col_sla,
+                with_exemplars=bool(getattr(config, "with_exemplars", False)),
             )
         else:
             output[column] = accumulator.result()

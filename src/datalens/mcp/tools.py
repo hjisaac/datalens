@@ -165,6 +165,10 @@ def compute_statistics(
     top_categories: int | None = 10,
     workers: int | None = None,
     batch_size: int = 65_536,
+    with_exemplars: bool = False,
+    id_column: str | None = None,
+    preview_column: str | None = None,
+    exemplar_columns: list[str] | None = None,
 ) -> dict[str, Any]:
     """Execute streaming Map-Reduce statistics on a tabular dataset.
 
@@ -177,6 +181,10 @@ def compute_statistics(
         top_categories: Maximum number of category frequencies to retain per categorical column.
         workers: Process count (None = all CPUs, 1 = serial in-process).
         batch_size: Rows per streaming batch.
+        with_exemplars: If True, attach concrete landmark sample rows to each target quantile.
+        id_column: Optional column name identifying each row for exemplar attribution.
+        preview_column: Optional column name containing a short text snippet for exemplar attribution.
+        exemplar_columns: Optional additional column names to include in exemplar context.
     """
     target = Path(path).expanduser().resolve()
     if not target.exists():
@@ -202,6 +210,10 @@ def compute_statistics(
         top_categories=top_categories,
         workers=workers,
         batch_size=batch_size,
+        with_exemplars=with_exemplars,
+        id_column=id_column,
+        preview_column=preview_column,
+        exemplar_columns=exemplar_columns,
     )
 
     result = run_analysis(config)
@@ -213,6 +225,9 @@ def profile_dataset(
     include_quantiles: bool = True,
     max_categories: int = 10,
     workers: int | None = None,
+    with_exemplars: bool = False,
+    id_column: str | None = None,
+    preview_column: str | None = None,
 ) -> dict[str, Any]:
     """Automated one-click profiling of any tabular dataset (Parquet, CSV, TSV, JSONL).
 
@@ -224,6 +239,9 @@ def profile_dataset(
         include_quantiles: If True, uses T-Digest quantile accumulators for numeric columns.
         max_categories: Maximum number of category frequencies to return.
         workers: Process count (None = all CPUs, 1 = serial).
+        with_exemplars: If True, attach concrete landmark sample rows to each target quantile.
+        id_column: Optional column name identifying each row for exemplar attribution.
+        preview_column: Optional column name containing a short text snippet for exemplar attribution.
     """
     inspection = inspect_dataset(path)
     rec_columns = dict(inspection["recommended_config"]["columns"])
@@ -247,6 +265,9 @@ def profile_dataset(
         columns=rec_columns,
         top_categories=max_categories,
         workers=workers,
+        with_exemplars=with_exemplars,
+        id_column=id_column,
+        preview_column=preview_column,
     )
 
     return {
